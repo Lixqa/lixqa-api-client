@@ -1,4 +1,6 @@
-# Lixqa API Client Generator
+# Lixqa API Client
+
+> **Note**: This is a "private" framework for internal use in Lixqa's projects and is not intended for the public. Documentation is minimal and the project is still unstable.
 
 A TypeScript API client generator for Lixqa APIs. This tool automatically generates a fully-typed TypeScript client from your API schema.
 
