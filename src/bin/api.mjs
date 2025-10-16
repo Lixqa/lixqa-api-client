@@ -83,6 +83,8 @@ async function generateClient(options) {
           })
           .join('; ');
         return `{ ${props} }`;
+      case 'void':
+        return 'void';
       default:
         return 'any';
     }
