@@ -34,6 +34,11 @@ export const createRequest = (options: ClientOptions = {}) => {
     const response = await fetch(url.toString(), fetchOptions);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
+    // Handle 204 No Content responses - no body to parse
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     const fullResponse = await response.json();
 
     return fullResponse.data as T;
