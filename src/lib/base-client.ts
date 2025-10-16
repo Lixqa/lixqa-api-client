@@ -12,7 +12,7 @@ export const createRequest = (options: ClientOptions = {}) => {
   };
 
   if (options.authToken) {
-    defaultHeaders['Authorization'] = `Bearer ${options.authToken}`;
+    defaultHeaders['Authorization'] = options.authToken;
   }
 
   return async <T = any>(
