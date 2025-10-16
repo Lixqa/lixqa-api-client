@@ -33,7 +33,10 @@ export const createRequest = (options: ClientOptions = {}) => {
       fetchOptions.body = JSON.stringify(requestOptions.body);
     const response = await fetch(url.toString(), fetchOptions);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
+
+    const fullResponse = await response.json();
+
+    return fullResponse.data as T;
   };
 };
 
