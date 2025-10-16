@@ -255,7 +255,7 @@ async function generateClient(options) {
         );
         if (methods.length === 0) return; // Skip routes with no methods
 
-        apiObject += `  ${basePath}: {\n`;
+        apiObject += `  '${basePath}': {\n`;
         methods.forEach((method) => {
           const methodLower = method.toLowerCase();
           const responseType = route.schema?.[method]?.response
@@ -268,7 +268,7 @@ async function generateClient(options) {
       }
 
       // Multi-level or parameterized routes - create nested structure
-      apiObject += `  ${basePath}: {\n`;
+      apiObject += `  '${basePath}': {\n`;
 
       // Add base route methods if it exists
       if (baseRoute) {
@@ -295,7 +295,7 @@ async function generateClient(options) {
           if (methods.length === 0) return; // Skip routes with no methods
 
           const nestedName = remainingPath.join('_');
-          apiObject += `    ${nestedName}: {\n`;
+          apiObject += `    '${nestedName}': {\n`;
           methods.forEach((method) => {
             const methodLower = method.toLowerCase();
             const responseType = route.schema?.[method]?.response
@@ -402,7 +402,7 @@ async function generateClient(options) {
         );
         if (methods.length === 0) return; // Skip routes with no methods
 
-        apiObject += `  ${basePath}: {\n`;
+        apiObject += `  '${basePath}': {\n`;
         methods.forEach((method) => {
           const methodLower = method.toLowerCase();
           const responseType = route.schema?.[method]?.response
@@ -415,7 +415,7 @@ async function generateClient(options) {
       }
 
       // Multi-level or parameterized routes - create nested structure
-      apiObject += `  ${basePath}: {\n`;
+      apiObject += `  '${basePath}': {\n`;
 
       // Add base route methods if it exists
       if (baseRoute) {
@@ -442,7 +442,7 @@ async function generateClient(options) {
           if (methods.length === 0) return; // Skip routes with no methods
 
           const nestedName = remainingPath.join('_');
-          apiObject += `    ${nestedName}: {\n`;
+          apiObject += `    '${nestedName}': {\n`;
           methods.forEach((method) => {
             const methodLower = method.toLowerCase();
             const responseType = route.schema?.[method]?.response
@@ -553,13 +553,13 @@ async function generateClient(options) {
             const signature = generateMethodSignature(route, method);
             methodSigs.push(`${methodLower}: ${signature}`);
           });
-          apiInterface += `  ${routeName}: { ${methodSigs.join('; ')} };\n`;
+          apiInterface += `  '${routeName}': { ${methodSigs.join('; ')} };\n`;
           return;
         }
       }
 
       // Multi-level or parameterized routes - create nested structure
-      let groupInterface = `  ${basePath}: {`;
+      let groupInterface = `  '${basePath}': {`;
       const groupMethods = [];
 
       // Add static routes at this level
@@ -585,7 +585,7 @@ async function generateClient(options) {
             const signature = generateMethodSignature(route, method);
             nestedMethods.push(`${methodLower}: ${signature}`);
           });
-          groupMethods.push(`${nestedName}: { ${nestedMethods.join('; ')} }`);
+          groupMethods.push(`'${nestedName}': { ${nestedMethods.join('; ')} }`);
         }
       });
 
