@@ -178,8 +178,17 @@ async function generateClient(options) {
               schema[method] !== null,
           );
 
-    // Skip routes with no available methods
-    if (availableMethods.length === 0) return;
+    // Skip routes with no available methods, unless they have parameter definitions
+    // (for routes that are defined but not yet implemented)
+    if (availableMethods.length === 0) {
+      const hasParams = schema?.params && typeof schema.params === 'object';
+      if (!hasParams) {
+        return;
+      } else {
+        // For routes with only params, we'll add a placeholder method
+        availableMethods.push('GET'); // Default to GET as placeholder
+      }
+    }
 
     // Add methods to route for processing
     route.methods = availableMethods;
@@ -338,6 +347,13 @@ async function generateClient(options) {
 
         // Generate parameterized route groups
         paramGroups.forEach((routes) => {
+          console.log(
+            '🔍 API: Processing paramGroup with',
+            routes.length,
+            'routes:',
+            routes.map((r) => r.path),
+          );
+
           // Find the first parameter position
           const firstParamRoute = routes.find((route) => {
             const segments = route.path.split('/').filter(Boolean);
@@ -401,7 +417,19 @@ async function generateClient(options) {
           });
 
           // Generate nested structure
+          console.log(
+            '🔍 API: nestedGroups keys:',
+            Array.from(nestedGroups.keys()),
+          );
           nestedGroups.forEach((group, groupKey) => {
+            console.log(
+              '🔍 API: Processing nestedGroup key:',
+              groupKey,
+              'with',
+              group.routes.length,
+              'routes:',
+              group.routes.map((r) => r.path),
+            );
             if (groupKey === '__direct__') {
               // Direct methods on the first parameterized route
               group.routes.forEach((route) => {
@@ -433,10 +461,25 @@ async function generateClient(options) {
               const directRoutes = groupRoutes.filter((route) => {
                 const segments = route.path.split('/').filter(Boolean);
                 const remainingSegments = segments.slice(firstParamIndex + 1);
-                return !remainingSegments.some((segment) =>
+                const isDirect = !remainingSegments.some((segment) =>
                   segment.startsWith(':'),
                 );
+                console.log(
+                  '🔍 API: Checking route',
+                  route.path,
+                  'isDirect:',
+                  isDirect,
+                  'remainingSegments:',
+                  remainingSegments,
+                );
+                return isDirect;
               });
+              console.log(
+                '🔍 API: directRoutes count:',
+                directRoutes.length,
+                'paths:',
+                directRoutes.map((r) => r.path),
+              );
 
               directRoutes.forEach((route) => {
                 route.methods.forEach((method) => {
@@ -454,6 +497,12 @@ async function generateClient(options) {
               });
 
               // Add parameterized methods if there are any
+              console.log(
+                '🔍 API: hasParams:',
+                hasParams,
+                'paramSegments:',
+                paramSegments,
+              );
               if (hasParams && paramSegments.length > 0) {
                 const secondParamName = paramSegments[0].slice(1);
                 apiObject += `        $: (${secondParamName}: string | number) => ({\n`;
@@ -461,13 +510,38 @@ async function generateClient(options) {
                 const paramRoutes = groupRoutes.filter((route) => {
                   const segments = route.path.split('/').filter(Boolean);
                   const remainingSegments = segments.slice(firstParamIndex + 1);
-                  return remainingSegments.some((segment) =>
+                  const hasParam = remainingSegments.some((segment) =>
                     segment.startsWith(':'),
                   );
+                  console.log(
+                    '🔍 API: Param route check',
+                    route.path,
+                    'hasParam:',
+                    hasParam,
+                  );
+                  return hasParam;
                 });
+                console.log(
+                  '🔍 API: paramRoutes count:',
+                  paramRoutes.length,
+                  'paths:',
+                  paramRoutes.map((r) => r.path),
+                );
 
                 paramRoutes.forEach((route) => {
+                  console.log(
+                    '🔍 API: Processing param route',
+                    route.path,
+                    'methods:',
+                    route.methods,
+                  );
                   route.methods.forEach((method) => {
+                    console.log(
+                      '🔍 API: Processing method',
+                      method,
+                      'disabled:',
+                      route.settings[method]?.disabled,
+                    );
                     if (route.settings[method]?.disabled) return;
                     const methodLower = method.toLowerCase();
                     const responseType = route.schema?.[method]?.response
@@ -476,6 +550,12 @@ async function generateClient(options) {
                     const pathTemplate = route.path.replace(
                       /:(\w+)/g,
                       (match, paramName) => `\${${paramName}}`,
+                    );
+                    console.log(
+                      '🔍 API: Generating method',
+                      methodLower,
+                      'for',
+                      route.path,
                     );
                     apiObject += `          ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
                   });
