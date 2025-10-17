@@ -37,6 +37,9 @@ async function generateClient(options) {
   const API_BASE = options.url;
   const OUTPUT = options.output;
 
+  let totalGeneratedRoutes = 0;
+  let totalGeneratedMethods = 0;
+
   console.log(`Fetching API schema from ${API_BASE}...`);
   let routes;
   try {
@@ -47,9 +50,6 @@ async function generateClient(options) {
     const data = await res.json();
     routes = data.data || data;
     console.log(`Found ${routes.length} routes`);
-
-    let totalGeneratedRoutes = 0;
-    let totalGeneratedMethods = 0;
   } catch (error) {
     console.error('❌ Failed to fetch API schema:', error.message);
     process.exit(1);
