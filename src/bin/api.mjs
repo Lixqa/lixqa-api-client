@@ -344,7 +344,7 @@ async function generateClient(options) {
 
           apiObject += `    $: (${firstParamName}: string | number) => ({\n`;
 
-          // Group routes by their structure after the first parameter
+          // Group routes by their static path after the first parameter
           const nestedGroups = new Map();
 
           routes.forEach((route) => {
@@ -354,24 +354,45 @@ async function generateClient(options) {
             if (remainingSegments.length === 0) {
               // This is a direct method on the first parameterized route
               if (!nestedGroups.has('__direct__')) {
-                nestedGroups.set('__direct__', []);
+                nestedGroups.set('__direct__', {
+                  routes: [],
+                  hasParams: false,
+                });
               }
-              nestedGroups.get('__direct__').push(route);
+              nestedGroups.get('__direct__').routes.push(route);
             } else {
-              // This is a nested route
-              const nestedPath = remainingSegments.join('_');
-              if (!nestedGroups.has(nestedPath)) {
-                nestedGroups.set(nestedPath, []);
+              // Extract static path before any parameters
+              const staticPathSegments = [];
+              const paramSegments = [];
+
+              remainingSegments.forEach((segment) => {
+                if (segment.startsWith(':')) {
+                  paramSegments.push(segment);
+                } else {
+                  staticPathSegments.push(segment);
+                }
+              });
+
+              const staticPath = staticPathSegments.join('_');
+              const groupKey = staticPath || '__direct__';
+
+              if (!nestedGroups.has(groupKey)) {
+                nestedGroups.set(groupKey, {
+                  staticPath,
+                  hasParams: paramSegments.length > 0,
+                  paramSegments,
+                  routes: [],
+                });
               }
-              nestedGroups.get(nestedPath).push(route);
+              nestedGroups.get(groupKey).routes.push(route);
             }
           });
 
           // Generate nested structure
-          nestedGroups.forEach((groupRoutes, nestedPath) => {
-            if (nestedPath === '__direct__') {
+          nestedGroups.forEach((group, groupKey) => {
+            if (groupKey === '__direct__') {
               // Direct methods on the first parameterized route
-              groupRoutes.forEach((route) => {
+              group.routes.forEach((route) => {
                 route.methods.forEach((method) => {
                   if (route.settings[method]?.disabled) return;
                   const methodLower = method.toLowerCase();
@@ -386,18 +407,46 @@ async function generateClient(options) {
                 });
               });
             } else {
-              // Nested routes - check if they have more parameters
-              const hasMoreParams = groupRoutes.some((route) => {
+              // Nested routes
+              const {
+                staticPath,
+                hasParams,
+                paramSegments,
+                routes: groupRoutes,
+              } = group;
+
+              apiObject += `      '${staticPath}': {\n`;
+
+              // Add direct methods (routes without additional parameters)
+              const directRoutes = groupRoutes.filter((route) => {
                 const segments = route.path.split('/').filter(Boolean);
                 const remainingSegments = segments.slice(firstParamIndex + 1);
-                return remainingSegments.some((segment) =>
+                return !remainingSegments.some((segment) =>
                   segment.startsWith(':'),
                 );
               });
 
-              if (hasMoreParams) {
-                // This nested route has more parameters, create another $ function
-                const secondParamRoute = groupRoutes.find((route) => {
+              directRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const responseType = route.schema?.[method]?.response
+                    ? zodDefToTypeScript(route.schema[method].response)
+                    : 'any';
+                  const pathTemplate = route.path.replace(
+                    /:(\w+)/g,
+                    (match, paramName) => `\${${paramName}}`,
+                  );
+                  apiObject += `        ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                });
+              });
+
+              // Add parameterized methods if there are any
+              if (hasParams && paramSegments.length > 0) {
+                const secondParamName = paramSegments[0].slice(1);
+                apiObject += `        $: (${secondParamName}: string | number) => ({\n`;
+
+                const paramRoutes = groupRoutes.filter((route) => {
                   const segments = route.path.split('/').filter(Boolean);
                   const remainingSegments = segments.slice(firstParamIndex + 1);
                   return remainingSegments.some((segment) =>
@@ -405,49 +454,7 @@ async function generateClient(options) {
                   );
                 });
 
-                if (secondParamRoute) {
-                  const secondParamSegments = secondParamRoute.path
-                    .split('/')
-                    .filter(Boolean);
-                  const remainingSegments = secondParamSegments.slice(
-                    firstParamIndex + 1,
-                  );
-                  const secondParamIndex = remainingSegments.findIndex(
-                    (segment) => segment.startsWith(':'),
-                  );
-                  const secondParamName =
-                    remainingSegments[secondParamIndex].slice(1);
-
-                  // Extract the static path before the parameter
-                  const staticPath = remainingSegments
-                    .slice(0, secondParamIndex)
-                    .join('_');
-
-                  apiObject += `      '${staticPath}': {\n`;
-                  apiObject += `        $: (${secondParamName}: string | number) => ({\n`;
-
-                  groupRoutes.forEach((route) => {
-                    route.methods.forEach((method) => {
-                      if (route.settings[method]?.disabled) return;
-                      const methodLower = method.toLowerCase();
-                      const responseType = route.schema?.[method]?.response
-                        ? zodDefToTypeScript(route.schema[method].response)
-                        : 'any';
-                      const pathTemplate = route.path.replace(
-                        /:(\w+)/g,
-                        (match, paramName) => `\${${paramName}}`,
-                      );
-                      apiObject += `          ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
-                    });
-                  });
-
-                  apiObject += `        }),\n`;
-                  apiObject += `      },\n`;
-                }
-              } else {
-                // This nested route has no more parameters, just methods
-                apiObject += `      '${nestedPath}': {\n`;
-                groupRoutes.forEach((route) => {
+                paramRoutes.forEach((route) => {
                   route.methods.forEach((method) => {
                     if (route.settings[method]?.disabled) return;
                     const methodLower = method.toLowerCase();
@@ -458,11 +465,14 @@ async function generateClient(options) {
                       /:(\w+)/g,
                       (match, paramName) => `\${${paramName}}`,
                     );
-                    apiObject += `        ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                    apiObject += `          ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
                   });
                 });
-                apiObject += `      },\n`;
+
+                apiObject += `        }),\n`;
               }
+
+              apiObject += `      },\n`;
             }
           });
 
@@ -766,7 +776,7 @@ async function generateClient(options) {
           );
           const firstParamName = firstParamSegments[firstParamIndex].slice(1);
 
-          // Group routes by their structure after the first parameter
+          // Group routes by their static path after the first parameter
           const nestedGroups = new Map();
 
           routes.forEach((route) => {
@@ -776,16 +786,37 @@ async function generateClient(options) {
             if (remainingSegments.length === 0) {
               // This is a direct method on the first parameterized route
               if (!nestedGroups.has('__direct__')) {
-                nestedGroups.set('__direct__', []);
+                nestedGroups.set('__direct__', {
+                  routes: [],
+                  hasParams: false,
+                });
               }
-              nestedGroups.get('__direct__').push(route);
+              nestedGroups.get('__direct__').routes.push(route);
             } else {
-              // This is a nested route
-              const nestedPath = remainingSegments.join('_');
-              if (!nestedGroups.has(nestedPath)) {
-                nestedGroups.set(nestedPath, []);
+              // Extract static path before any parameters
+              const staticPathSegments = [];
+              const paramSegments = [];
+
+              remainingSegments.forEach((segment) => {
+                if (segment.startsWith(':')) {
+                  paramSegments.push(segment);
+                } else {
+                  staticPathSegments.push(segment);
+                }
+              });
+
+              const staticPath = staticPathSegments.join('_');
+              const groupKey = staticPath || '__direct__';
+
+              if (!nestedGroups.has(groupKey)) {
+                nestedGroups.set(groupKey, {
+                  staticPath,
+                  hasParams: paramSegments.length > 0,
+                  paramSegments,
+                  routes: [],
+                });
               }
-              nestedGroups.get(nestedPath).push(route);
+              nestedGroups.get(groupKey).routes.push(route);
             }
           });
 
@@ -793,10 +824,10 @@ async function generateClient(options) {
           let paramInterface = `$: (${firstParamName}: string | number) => { `;
           const paramMethods = [];
 
-          nestedGroups.forEach((groupRoutes, nestedPath) => {
-            if (nestedPath === '__direct__') {
+          nestedGroups.forEach((group, groupKey) => {
+            if (groupKey === '__direct__') {
               // Direct methods on the first parameterized route
-              groupRoutes.forEach((route) => {
+              group.routes.forEach((route) => {
                 route.methods.forEach((method) => {
                   if (route.settings[method]?.disabled) return;
                   const methodLower = method.toLowerCase();
@@ -805,18 +836,39 @@ async function generateClient(options) {
                 });
               });
             } else {
-              // Nested routes - check if they have more parameters
-              const hasMoreParams = groupRoutes.some((route) => {
+              // Nested routes
+              const {
+                staticPath,
+                hasParams,
+                paramSegments,
+                routes: groupRoutes,
+              } = group;
+
+              const nestedMethods = [];
+
+              // Add direct methods (routes without additional parameters)
+              const directRoutes = groupRoutes.filter((route) => {
                 const segments = route.path.split('/').filter(Boolean);
                 const remainingSegments = segments.slice(firstParamIndex + 1);
-                return remainingSegments.some((segment) =>
+                return !remainingSegments.some((segment) =>
                   segment.startsWith(':'),
                 );
               });
 
-              if (hasMoreParams) {
-                // This nested route has more parameters, create another $ function
-                const secondParamRoute = groupRoutes.find((route) => {
+              directRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const signature = generateMethodSignature(route, method);
+                  nestedMethods.push(`${methodLower}: ${signature}`);
+                });
+              });
+
+              // Add parameterized methods if there are any
+              if (hasParams && paramSegments.length > 0) {
+                const secondParamName = paramSegments[0].slice(1);
+
+                const paramRoutes = groupRoutes.filter((route) => {
                   const segments = route.path.split('/').filter(Boolean);
                   const remainingSegments = segments.slice(firstParamIndex + 1);
                   return remainingSegments.some((segment) =>
@@ -824,53 +876,24 @@ async function generateClient(options) {
                   );
                 });
 
-                if (secondParamRoute) {
-                  const secondParamSegments = secondParamRoute.path
-                    .split('/')
-                    .filter(Boolean);
-                  const remainingSegments = secondParamSegments.slice(
-                    firstParamIndex + 1,
-                  );
-                  const secondParamIndex = remainingSegments.findIndex(
-                    (segment) => segment.startsWith(':'),
-                  );
-                  const secondParamName =
-                    remainingSegments[secondParamIndex].slice(1);
-
-                  // Extract the static path before the parameter
-                  const staticPath = remainingSegments
-                    .slice(0, secondParamIndex)
-                    .join('_');
-
-                  const nestedMethods = [];
-                  groupRoutes.forEach((route) => {
-                    route.methods.forEach((method) => {
-                      if (route.settings[method]?.disabled) return;
-                      const methodLower = method.toLowerCase();
-                      const signature = generateMethodSignature(route, method);
-                      nestedMethods.push(`${methodLower}: ${signature}`);
-                    });
-                  });
-
-                  paramMethods.push(
-                    `'${staticPath}': { $: (${secondParamName}: string | number) => { ${nestedMethods.join('; ')} } }`,
-                  );
-                }
-              } else {
-                // This nested route has no more parameters, just methods
-                const nestedMethods = [];
-                groupRoutes.forEach((route) => {
+                const paramRouteMethods = [];
+                paramRoutes.forEach((route) => {
                   route.methods.forEach((method) => {
                     if (route.settings[method]?.disabled) return;
                     const methodLower = method.toLowerCase();
                     const signature = generateMethodSignature(route, method);
-                    nestedMethods.push(`${methodLower}: ${signature}`);
+                    paramRouteMethods.push(`${methodLower}: ${signature}`);
                   });
                 });
-                paramMethods.push(
-                  `'${nestedPath}': { ${nestedMethods.join('; ')} }`,
+
+                nestedMethods.push(
+                  `$: (${secondParamName}: string | number) => { ${paramRouteMethods.join('; ')} }`,
                 );
               }
+
+              paramMethods.push(
+                `'${staticPath}': { ${nestedMethods.join('; ')} }`,
+              );
             }
           });
 
