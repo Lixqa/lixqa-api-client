@@ -47,6 +47,9 @@ async function generateClient(options) {
     const data = await res.json();
     routes = data.data || data;
     console.log(`Found ${routes.length} routes`);
+
+    let totalGeneratedRoutes = 0;
+    let totalGeneratedMethods = 0;
   } catch (error) {
     console.error('❌ Failed to fetch API schema:', error.message);
     process.exit(1);
@@ -181,6 +184,12 @@ async function generateClient(options) {
     // Add methods to route for processing
     route.methods = availableMethods;
 
+    console.log(
+      `📝 Generated route: ${route.path} [${availableMethods.join(', ')}]`,
+    );
+    totalGeneratedRoutes++;
+    totalGeneratedMethods += availableMethods.length;
+
     if (hasParameters(route.path)) {
       parameterizedRoutes.push(route);
     } else {
@@ -263,6 +272,9 @@ async function generateClient(options) {
           const responseType = route.schema?.[method]?.response
             ? zodDefToTypeScript(route.schema[method].response)
             : 'any';
+          console.log(
+            `  🔧 Generated method: ${methodLower} for route ${route.path}`,
+          );
           apiObject += `    ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>('${route.path}', '${method.toUpperCase()}', requestOptions),\n`;
         });
         apiObject += '  },\n';
@@ -562,6 +574,9 @@ async function generateClient(options) {
           const responseType = route.schema?.[method]?.response
             ? zodDefToTypeScript(route.schema[method].response)
             : 'any';
+          console.log(
+            `  🔧 Generated method: ${methodLower} for route ${route.path}`,
+          );
           apiObject += `    ${methodLower}: (options: any = {}) => request<${responseType}>('${route.path}', '${method.toUpperCase()}', options),\n`;
         });
         apiObject += '  },\n';
@@ -611,6 +626,9 @@ async function generateClient(options) {
       // Add parameterized routes
       paramRoutes.forEach((route) => {
         const paramNames = getParameterNames(route.path);
+        console.log(
+          `  🔧 Generated parameterized route: ${route.path} with params [${paramNames.join(', ')}]`,
+        );
         apiObject += `    $: (${paramNames.map((name) => `${name}: string | number`).join(', ')}) => ({\n`;
         route.methods.forEach((method) => {
           if (route.settings[method]?.disabled) return;
@@ -621,6 +639,9 @@ async function generateClient(options) {
           const pathTemplate = route.path.replace(
             /:(\w+)/g,
             (match, paramName) => `\${${paramName}}`,
+          );
+          console.log(
+            `    🔧 Generated method: ${methodLower} for parameterized route ${route.path}`,
           );
           apiObject += `      ${methodLower}: (options: any = {}) => request<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', options),\n`;
         });
@@ -932,7 +953,12 @@ export const api: ApiMethods = generateApiObject(request);`;
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  console.log(`Writing API client to ${OUTPUT}...`);
+  console.log(`\n📊 Generation Summary:`);
+  console.log(`  • Total routes processed: ${totalGeneratedRoutes}`);
+  console.log(`  • Total methods generated: ${totalGeneratedMethods}`);
+  console.log(`  • Static routes: ${staticRoutes.length}`);
+  console.log(`  • Parameterized routes: ${parameterizedRoutes.length}`);
+  console.log(`\nWriting API client to ${OUTPUT}...`);
 
   if (options.format) {
     try {
