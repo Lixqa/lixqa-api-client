@@ -418,7 +418,12 @@ async function generateClient(options) {
                   const secondParamName =
                     remainingSegments[secondParamIndex].slice(1);
 
-                  apiObject += `      '${nestedPath}': {\n`;
+                  // Extract the static path before the parameter
+                  const staticPath = remainingSegments
+                    .slice(0, secondParamIndex)
+                    .join('_');
+
+                  apiObject += `      '${staticPath}': {\n`;
                   apiObject += `        $: (${secondParamName}: string | number) => ({\n`;
 
                   groupRoutes.forEach((route) => {
@@ -832,6 +837,11 @@ async function generateClient(options) {
                   const secondParamName =
                     remainingSegments[secondParamIndex].slice(1);
 
+                  // Extract the static path before the parameter
+                  const staticPath = remainingSegments
+                    .slice(0, secondParamIndex)
+                    .join('_');
+
                   const nestedMethods = [];
                   groupRoutes.forEach((route) => {
                     route.methods.forEach((method) => {
@@ -843,7 +853,7 @@ async function generateClient(options) {
                   });
 
                   paramMethods.push(
-                    `'${nestedPath}': { $: (${secondParamName}: string | number) => { ${nestedMethods.join('; ')} } }`,
+                    `'${staticPath}': { $: (${secondParamName}: string | number) => { ${nestedMethods.join('; ')} } }`,
                   );
                 }
               } else {
