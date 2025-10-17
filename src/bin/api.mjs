@@ -310,23 +310,104 @@ async function generateClient(options) {
       });
 
       // Add parameterized routes
-      paramRoutes.forEach((route) => {
-        const paramNames = getParameterNames(route.path);
-        apiObject += `    $: (${paramNames.map((name) => `${name}: string | number`).join(', ')}) => ({\n`;
-        route.methods.forEach((method) => {
-          if (route.settings[method]?.disabled) return;
-          const methodLower = method.toLowerCase();
-          const responseType = route.schema?.[method]?.response
-            ? zodDefToTypeScript(route.schema[method].response)
-            : 'any';
-          const pathTemplate = route.path.replace(
-            /:(\w+)/g,
-            (match, paramName) => `\${${paramName}}`,
-          );
-          apiObject += `      ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+      if (paramRoutes.length > 0) {
+        // Group parameterized routes by their parameter pattern
+        const paramGroups = new Map();
+
+        paramRoutes.forEach((route) => {
+          const segments = route.path.split('/').filter(Boolean);
+          const paramPositions = [];
+          const paramNames = [];
+
+          segments.forEach((segment, index) => {
+            if (segment.startsWith(':')) {
+              paramPositions.push(index);
+              paramNames.push(segment.slice(1));
+            }
+          });
+
+          const key = paramPositions.join(',');
+          if (!paramGroups.has(key)) {
+            paramGroups.set(key, {
+              paramNames,
+              paramPositions,
+              routes: [],
+            });
+          }
+          paramGroups.get(key).routes.push(route);
         });
-        apiObject += '    }),\n';
-      });
+
+        // Generate parameterized route groups
+        paramGroups.forEach((group) => {
+          const { paramNames, routes } = group;
+          apiObject += `    $: (${paramNames.map((name) => `${name}: string | number`).join(', ')}) => ({\n`;
+
+          // Group routes by their nested path structure
+          const nestedGroups = new Map();
+
+          routes.forEach((route) => {
+            const segments = route.path.split('/').filter(Boolean);
+            const baseSegments = segments.slice(0, paramNames.length + 1); // Base path + first param
+            const remainingSegments = segments.slice(paramNames.length + 1);
+
+            if (remainingSegments.length === 0) {
+              // This is a direct method on the parameterized route
+              if (!nestedGroups.has('__direct__')) {
+                nestedGroups.set('__direct__', []);
+              }
+              nestedGroups.get('__direct__').push(route);
+            } else {
+              // This is a nested route
+              const nestedPath = remainingSegments.join('_');
+              if (!nestedGroups.has(nestedPath)) {
+                nestedGroups.set(nestedPath, []);
+              }
+              nestedGroups.get(nestedPath).push(route);
+            }
+          });
+
+          // Generate nested structure
+          nestedGroups.forEach((groupRoutes, nestedPath) => {
+            if (nestedPath === '__direct__') {
+              // Direct methods on the parameterized route
+              groupRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const responseType = route.schema?.[method]?.response
+                    ? zodDefToTypeScript(route.schema[method].response)
+                    : 'any';
+                  const pathTemplate = route.path.replace(
+                    /:(\w+)/g,
+                    (match, paramName) => `\${${paramName}}`,
+                  );
+                  apiObject += `      ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                });
+              });
+            } else {
+              // Nested routes
+              apiObject += `      '${nestedPath}': {\n`;
+              groupRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const responseType = route.schema?.[method]?.response
+                    ? zodDefToTypeScript(route.schema[method].response)
+                    : 'any';
+                  const pathTemplate = route.path.replace(
+                    /:(\w+)/g,
+                    (match, paramName) => `\${${paramName}}`,
+                  );
+                  apiObject += `        ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                });
+              });
+              apiObject += `      },\n`;
+            }
+          });
+
+          apiObject += '    }),\n';
+        });
+      }
 
       apiObject += '  },\n';
     });
@@ -592,19 +673,96 @@ async function generateClient(options) {
       });
 
       // Add parameterized routes
-      paramRoutes.forEach((route) => {
-        const paramNames = getParameterNames(route.path);
-        const paramMethods = [];
-        route.methods.forEach((method) => {
-          if (route.settings[method]?.disabled) return;
-          const methodLower = method.toLowerCase();
-          const signature = generateMethodSignature(route, method);
-          paramMethods.push(`${methodLower}: ${signature}`);
+      if (paramRoutes.length > 0) {
+        // Group parameterized routes by their parameter pattern
+        const paramGroups = new Map();
+
+        paramRoutes.forEach((route) => {
+          const segments = route.path.split('/').filter(Boolean);
+          const paramPositions = [];
+          const paramNames = [];
+
+          segments.forEach((segment, index) => {
+            if (segment.startsWith(':')) {
+              paramPositions.push(index);
+              paramNames.push(segment.slice(1));
+            }
+          });
+
+          const key = paramPositions.join(',');
+          if (!paramGroups.has(key)) {
+            paramGroups.set(key, {
+              paramNames,
+              paramPositions,
+              routes: [],
+            });
+          }
+          paramGroups.get(key).routes.push(route);
         });
-        groupMethods.push(
-          `$: (${paramNames.map((name) => `${name}: string | number`).join(', ')}) => { ${paramMethods.join('; ')} }`,
-        );
-      });
+
+        // Generate parameterized route groups
+        paramGroups.forEach((group) => {
+          const { paramNames, routes } = group;
+
+          // Group routes by their nested path structure
+          const nestedGroups = new Map();
+
+          routes.forEach((route) => {
+            const segments = route.path.split('/').filter(Boolean);
+            const remainingSegments = segments.slice(paramNames.length + 1);
+
+            if (remainingSegments.length === 0) {
+              // This is a direct method on the parameterized route
+              if (!nestedGroups.has('__direct__')) {
+                nestedGroups.set('__direct__', []);
+              }
+              nestedGroups.get('__direct__').push(route);
+            } else {
+              // This is a nested route
+              const nestedPath = remainingSegments.join('_');
+              if (!nestedGroups.has(nestedPath)) {
+                nestedGroups.set(nestedPath, []);
+              }
+              nestedGroups.get(nestedPath).push(route);
+            }
+          });
+
+          // Generate interface for nested structure
+          let paramInterface = `$: (${paramNames.map((name) => `${name}: string | number`).join(', ')}) => { `;
+          const paramMethods = [];
+
+          nestedGroups.forEach((groupRoutes, nestedPath) => {
+            if (nestedPath === '__direct__') {
+              // Direct methods on the parameterized route
+              groupRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const signature = generateMethodSignature(route, method);
+                  paramMethods.push(`${methodLower}: ${signature}`);
+                });
+              });
+            } else {
+              // Nested routes
+              const nestedMethods = [];
+              groupRoutes.forEach((route) => {
+                route.methods.forEach((method) => {
+                  if (route.settings[method]?.disabled) return;
+                  const methodLower = method.toLowerCase();
+                  const signature = generateMethodSignature(route, method);
+                  nestedMethods.push(`${methodLower}: ${signature}`);
+                });
+              });
+              paramMethods.push(
+                `'${nestedPath}': { ${nestedMethods.join('; ')} }`,
+              );
+            }
+          });
+
+          paramInterface += `${paramMethods.join('; ')} }`;
+          groupMethods.push(paramInterface);
+        });
+      }
 
       groupInterface += ` ${groupMethods.join('; ')} };\n`;
       apiInterface += groupInterface;
