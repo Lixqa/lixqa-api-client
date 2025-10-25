@@ -69,6 +69,8 @@ async function generateClient(options) {
         return 'any';
       case 'never':
         return 'never';
+      case 'null':
+        return 'null';
       case 'optional':
         return zodDefToTypeScript(def.innerType, true);
       case 'array':
@@ -86,6 +88,12 @@ async function generateClient(options) {
           })
           .join('; ');
         return `{ ${props} }`;
+      case 'union':
+        if (!def.options || !Array.isArray(def.options)) return 'any';
+        const unionTypes = def.options.map((option) =>
+          zodDefToTypeScript(option),
+        );
+        return unionTypes.join(' | ');
       case 'void':
         return 'void';
       default:
