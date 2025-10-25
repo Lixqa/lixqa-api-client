@@ -18,19 +18,54 @@ export const createRequest = (options: ClientOptions = {}) => {
   return async <T = any>(
     path: string,
     method: string,
-    requestOptions: { body?: any; query?: any } = {},
+    requestOptions: { body?: any; query?: any; files?: any } = {},
   ): Promise<T> => {
     const url = new URL(baseUrl + path);
     if (requestOptions.query)
       Object.entries(requestOptions.query).forEach(([key, value]) => {
         if (value !== undefined) url.searchParams.append(key, String(value));
       });
+
     const fetchOptions: RequestInit = {
       method,
       headers: { ...defaultHeaders },
     };
-    if (requestOptions.body)
+
+    // Handle file uploads with FormData
+    if (requestOptions.files) {
+      const formData = new FormData();
+
+      // Handle single file
+      if (requestOptions.files.file) {
+        formData.append('file', requestOptions.files.file);
+      }
+
+      // Handle multiple files
+      if (
+        requestOptions.files.files &&
+        Array.isArray(requestOptions.files.files)
+      ) {
+        requestOptions.files.files.forEach((file: File) => {
+          formData.append('files', file);
+        });
+      }
+
+      // Add other form fields if body is provided
+      if (requestOptions.body) {
+        Object.entries(requestOptions.body).forEach(([key, value]) => {
+          if (value !== undefined) {
+            formData.append(key, String(value));
+          }
+        });
+      }
+
+      fetchOptions.body = formData;
+      // Remove Content-Type header for FormData (browser will set it with boundary)
+      delete (fetchOptions.headers as any)['Content-Type'];
+    } else if (requestOptions.body) {
       fetchOptions.body = JSON.stringify(requestOptions.body);
+    }
+
     const response = await fetch(url.toString(), fetchOptions);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 

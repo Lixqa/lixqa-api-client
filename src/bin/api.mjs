@@ -132,16 +132,68 @@ async function generateClient(options) {
     return true;
   }
 
+  function hasFileUploads(methodSchema) {
+    if (!methodSchema || !methodSchema.files) return false;
+    const filesDef = methodSchema.files;
+    return (
+      filesDef &&
+      filesDef.def &&
+      filesDef.def.type === 'any' &&
+      filesDef.__fileOptions
+    );
+  }
+
+  function getFileUploadInfo(methodSchema) {
+    if (!hasFileUploads(methodSchema)) return null;
+    const filesDef = methodSchema.files;
+    const fileOptions = filesDef.__fileOptions;
+    return {
+      multiple: fileOptions.multiple || false,
+      required: fileOptions.required || false,
+      maxFiles: fileOptions.maxFiles || 1,
+      allowedExtensions: fileOptions.allowedExtensions || [],
+      maxSize: fileOptions.maxSize || 5242880, // 5MB default
+    };
+  }
+
+  function generateRequestCall(route, method, pathTemplate) {
+    const methodSchema = route.schema?.[method] || {};
+    const responseType = methodSchema.response
+      ? zodDefToTypeScript(methodSchema.response)
+      : 'any';
+
+    const hasFiles = hasFileUploads(methodSchema);
+
+    if (hasFiles) {
+      const fileInfo = getFileUploadInfo(methodSchema);
+      if (fileInfo.multiple) {
+        return `requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', {
+          ...requestOptions,
+          files: requestOptions.files ? { files: requestOptions.files } : undefined
+        })`;
+      } else {
+        return `requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', {
+          ...requestOptions,
+          files: requestOptions.file ? { file: requestOptions.file } : undefined
+        })`;
+      }
+    } else {
+      return `requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions)`;
+    }
+  }
+
   function generateMethodSignature(route, method) {
     const methodSchema = route.schema?.[method] || {};
     const hasBody = methodSchema.body !== undefined;
     const hasQuery = methodSchema.query !== undefined;
+    const hasFiles = hasFileUploads(methodSchema);
 
     const responseType = methodSchema.response
       ? zodDefToTypeScript(methodSchema.response)
       : 'any';
 
-    if (!hasBody && !hasQuery) return `() => Promise<${responseType}>`;
+    if (!hasBody && !hasQuery && !hasFiles)
+      return `() => Promise<${responseType}>`;
 
     const parts = [];
     let hasRequiredOptions = false;
@@ -162,6 +214,19 @@ async function generateClient(options) {
       const queryOptional = queryRequired ? '' : '?';
       parts.push(`query${queryOptional}: ${queryType}`);
       if (queryRequired) hasRequiredOptions = true;
+    }
+
+    if (hasFiles) {
+      const fileInfo = getFileUploadInfo(methodSchema);
+      if (fileInfo.multiple) {
+        const filesOptional = fileInfo.required ? '' : '?';
+        parts.push(`files${filesOptional}: File[]`);
+        if (fileInfo.required) hasRequiredOptions = true;
+      } else {
+        const fileOptional = fileInfo.required ? '' : '?';
+        parts.push(`file${fileOptional}: File`);
+        if (fileInfo.required) hasRequiredOptions = true;
+      }
     }
 
     const optionsRequired = hasRequiredOptions ? '' : '?';
@@ -227,7 +292,7 @@ async function generateClient(options) {
         const responseType = rootRoute.schema?.[method]?.response
           ? zodDefToTypeScript(rootRoute.schema[method].response)
           : 'any';
-        apiObject += `  ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>('/', '${method.toUpperCase()}', requestOptions),\n`;
+        apiObject += `  ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(rootRoute, method, '/')},\n`;
       });
     }
 
@@ -292,7 +357,7 @@ async function generateClient(options) {
           console.log(
             `  🔧 Generated method: ${methodLower} for route ${route.path}`,
           );
-          apiObject += `    ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>('${route.path}', '${method.toUpperCase()}', requestOptions),\n`;
+          apiObject += `    ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, route.path)},\n`;
         });
         apiObject += '  },\n';
         return;
@@ -309,7 +374,7 @@ async function generateClient(options) {
           const responseType = baseRoute.schema?.[method]?.response
             ? zodDefToTypeScript(baseRoute.schema[method].response)
             : 'any';
-          apiObject += `    ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>('${baseRoute.path}', '${method.toUpperCase()}', requestOptions),\n`;
+          apiObject += `    ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(baseRoute, method, baseRoute.path)},\n`;
         });
       }
 
@@ -332,7 +397,7 @@ async function generateClient(options) {
             const responseType = route.schema?.[method]?.response
               ? zodDefToTypeScript(route.schema[method].response)
               : 'any';
-            apiObject += `      ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>('${route.path}', '${method.toUpperCase()}', requestOptions),\n`;
+            apiObject += `      ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, route.path)},\n`;
           });
           apiObject += '    },\n';
         }
@@ -451,7 +516,7 @@ async function generateClient(options) {
                     /:(\w+)/g,
                     (match, paramName) => `\${${paramName}}`,
                   );
-                  apiObject += `      ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                  apiObject += `      ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate)},\n`;
                 });
               });
             } else {
@@ -500,7 +565,7 @@ async function generateClient(options) {
                     /:(\w+)/g,
                     (match, paramName) => `\${${paramName}}`,
                   );
-                  apiObject += `        ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                  apiObject += `        ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate)},\n`;
                 });
               });
 
@@ -565,7 +630,7 @@ async function generateClient(options) {
                       'for',
                       route.path,
                     );
-                    apiObject += `          ${methodLower}: (requestOptions: any = {}) => requestFn<${responseType}>(\`${pathTemplate}\`, '${method.toUpperCase()}', requestOptions),\n`;
+                    apiObject += `          ${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate)},\n`;
                   });
                 });
 
