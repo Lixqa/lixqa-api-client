@@ -65,6 +65,21 @@ async function generateClient(options) {
         return 'number';
       case 'boolean':
         return 'boolean';
+      case 'date':
+        return 'Date';
+      case 'enum':
+        if (def.enum && Array.isArray(def.enum)) {
+          const enumValues = def.enum.map((value) => `"${value}"`).join(' | ');
+          return enumValues;
+        }
+        // Check for enum entries format
+        if (def.entries && typeof def.entries === 'object') {
+          const enumValues = Object.keys(def.entries)
+            .map((key) => `"${key}"`)
+            .join(' | ');
+          return enumValues;
+        }
+        return 'string';
       case 'any':
         return 'any';
       case 'never':
