@@ -17,7 +17,7 @@
     "prepublishOnly": "npm run build"
   },
   "bin": {
-    "lixqa-api": "./src/bin/api.mjs"
+    "lixqa-api": "./src/bin/lixqa-api.mjs"
   },
   "keywords": [
     "api",
