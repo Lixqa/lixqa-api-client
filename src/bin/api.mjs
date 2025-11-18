@@ -255,7 +255,7 @@ async function generateClient(options) {
 
     if (hasBody) {
       const bodyType = SEPARATE_TYPES
-        ? generateTypeName(route, method, 'RequestBody')
+        ? generateTypeName(route, method, '$RequestBody')
         : zodDefToTypeScript(methodSchema.body);
       const bodyRequired =
         bodyType !== 'any' && hasRequiredFields(methodSchema.body);
@@ -266,7 +266,7 @@ async function generateClient(options) {
 
     if (hasQuery) {
       const queryType = SEPARATE_TYPES
-        ? generateTypeName(route, method, 'RequestQuery')
+        ? generateTypeName(route, method, '$RequestQuery')
         : zodDefToTypeScript(methodSchema.query);
       const queryRequired =
         queryType !== 'any' && hasRequiredFields(methodSchema.query);
@@ -479,8 +479,8 @@ async function generateClient(options) {
       }
 
       // Collect body type
-      if (methodSchema.body) {
-        const typeName = generateTypeName(route, method, 'RequestBody');
+      if (methodSchema.body !== undefined) {
+        const typeName = generateTypeName(route, method, '$RequestBody');
         if (!typeDefinitions.has(typeName)) {
           typeDefinitions.set(typeName, {
             name: typeName,
@@ -490,8 +490,8 @@ async function generateClient(options) {
       }
 
       // Collect query type
-      if (methodSchema.query) {
-        const typeName = generateTypeName(route, method, 'RequestQuery');
+      if (methodSchema.query !== undefined) {
+        const typeName = generateTypeName(route, method, '$RequestQuery');
         if (!typeDefinitions.has(typeName)) {
           typeDefinitions.set(typeName, {
             name: typeName,
