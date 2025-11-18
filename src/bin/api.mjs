@@ -71,7 +71,12 @@ async function generateClient(options) {
   }
 
   function zodDefToTypeScript(zodDef, isOptional = false) {
-    if (!zodDef || !zodDef.def) return 'any';
+    if (!zodDef || !zodDef.def) {
+      log.debug(
+        `zodDefToTypeScript: Returning 'any' - zodDef is missing or has no def. zodDef: ${JSON.stringify(zodDef)}`,
+      );
+      return 'any';
+    }
     const def = zodDef.def;
     switch (def.type) {
       case 'string':
@@ -102,13 +107,47 @@ async function generateClient(options) {
         return 'null';
       case 'optional':
         return zodDefToTypeScript(def.innerType, true);
+      case 'nullable':
+        // Nullable type: T | null
+        const nullableInnerType = def.innerType
+          ? zodDefToTypeScript(def.innerType)
+          : 'any';
+        return `${nullableInnerType} | null`;
+      case 'lazy':
+        // Lazy type: used for recursive types, has a getter function
+        if (def.getter && typeof def.getter === 'function') {
+          try {
+            const lazySchema = def.getter();
+            return zodDefToTypeScript(lazySchema);
+          } catch (error) {
+            log.debug(
+              `zodDefToTypeScript: Error calling lazy getter - ${error.message}. Def: ${JSON.stringify(def)}`,
+            );
+            return 'any';
+          }
+        } else {
+          log.debug(
+            `zodDefToTypeScript: Returning 'any' - Lazy type has no getter function. Def: ${JSON.stringify(def)}`,
+          );
+          return 'any';
+        }
       case 'array':
         const elementType = def.element
           ? zodDefToTypeScript(def.element)
-          : 'any';
+          : (() => {
+              log.debug(
+                `zodDefToTypeScript: Returning 'any' for array element - Array type has no element definition. Def: ${JSON.stringify(def)}`,
+              );
+              return 'any';
+            })();
         return `${elementType}[]`;
       case 'object':
-        if (!def.shape) return 'Record<string, any>';
+        if (!def.shape) {
+          log.debug(
+            `zodDefToTypeScript: Returning 'Record<string, any>' - Object type has no shape. Def: ${JSON.stringify(def)}`,
+          );
+          return 'Record<string, any>';
+        }
         const props = Object.entries(def.shape)
           .map(([key, value]) => {
             const type = zodDefToTypeScript(value);
@@ -118,7 +157,12 @@ async function generateClient(options) {
           .join('; ');
         return `{ ${props} }`;
       case 'union':
-        if (!def.options || !Array.isArray(def.options)) return 'any';
+        if (!def.options || !Array.isArray(def.options)) {
+          log.debug(
+            `zodDefToTypeScript: Returning 'any' - Union type has no options or options is not an array. Def: ${JSON.stringify(def)}`,
+          );
+          return 'any';
+        }
         const unionTypes = def.options.map((option) =>
           zodDefToTypeScript(option),
         );
@@ -126,6 +170,9 @@ async function generateClient(options) {
       case 'void':
         return 'void';
       default:
+        log.debug(
+          `zodDefToTypeScript: Returning 'any' - Unhandled zod type: ${def.type}. Full def: ${JSON.stringify(def)}`,
+        );
         return 'any';
     }
   }
