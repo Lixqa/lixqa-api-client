@@ -173,20 +173,51 @@ async function generateClient(options) {
       .join('');
   }
 
-  function generateTypeName(route, method, typeSuffix) {
+  function generateTypeName(route, method, typeSuffix, accumulatedParams = []) {
     // Convert method to capitalized (GET -> Get, POST -> Post, etc.)
     const methodName = method.charAt(0) + method.slice(1).toLowerCase();
 
     // Split path into segments
     const segments = route.path.split('/').filter(Boolean);
 
-    // Process segments: convert to PascalCase and join with $
-    const pathParts = segments
-      .filter((segment) => !segment.startsWith(':')) // Skip param segments
-      .map((segment) => toPascalCase(segment));
+    // Build path parts, using $ where there's a param between segments
+    // Also add $ before type suffix if the last static segment has a param after it
+    // Example: /organisations/:orgId/departments/:depId → GetOrganisations$Departments$ResponseBody
+    // Example: /organisations/:orgId/departments → GetOrganisations$DepartmentsResponseBody
+    const pathParts = [];
+    let lastStaticSegmentIndex = -1;
 
-    // Join with $ and add type suffix
-    return `${methodName}${pathParts.join('$')}${typeSuffix}`;
+    // First pass: collect static segments and find the last one
+    for (let i = 0; i < segments.length; i++) {
+      if (!segments[i].startsWith(':')) {
+        lastStaticSegmentIndex = i;
+      }
+    }
+
+    // Second pass: build path parts
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      if (!segment.startsWith(':')) {
+        // Static segment - check if there's a param before it
+        const hasParamBefore = i > 0 && segments[i - 1].startsWith(':');
+
+        // Add $ if there's a param before this static segment
+        if (pathParts.length > 0 && hasParamBefore) {
+          pathParts.push('$');
+        }
+        pathParts.push(toPascalCase(segment));
+      }
+    }
+
+    // Add $ before type suffix if the last static segment has a param after it
+    const hasParamAfterLastSegment =
+      lastStaticSegmentIndex >= 0 &&
+      lastStaticSegmentIndex < segments.length - 1 &&
+      segments[lastStaticSegmentIndex + 1].startsWith(':');
+    const suffixPrefix = hasParamAfterLastSegment ? '$' : '';
+
+    // Join path parts (which may include $ separators) and add type suffix
+    return `${methodName}${pathParts.join('')}${suffixPrefix}${typeSuffix}`;
   }
 
   function generateParamsTypeName(route, method) {
@@ -205,11 +236,16 @@ async function generateClient(options) {
     return `${methodName}${pathParts.join('$')}$Params`;
   }
 
-  function generateRequestCall(route, method, pathTemplate) {
+  function generateRequestCall(
+    route,
+    method,
+    pathTemplate,
+    accumulatedParams = [],
+  ) {
     const methodSchema = route.schema?.[method] || {};
     const responseType =
       SEPARATE_TYPES && methodSchema.response
-        ? generateTypeName(route, method, '$ResponseBody')
+        ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
         : methodSchema.response
           ? zodDefToTypeScript(methodSchema.response)
           : 'any';
@@ -234,7 +270,7 @@ async function generateClient(options) {
     }
   }
 
-  function generateMethodSignature(route, method) {
+  function generateMethodSignature(route, method, accumulatedParams = []) {
     const methodSchema = route.schema?.[method] || {};
     const hasBody = methodSchema.body !== undefined;
     const hasQuery = methodSchema.query !== undefined;
@@ -242,7 +278,7 @@ async function generateClient(options) {
 
     const responseType =
       SEPARATE_TYPES && methodSchema.response
-        ? generateTypeName(route, method, '$ResponseBody')
+        ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
         : methodSchema.response
           ? zodDefToTypeScript(methodSchema.response)
           : 'any';
@@ -255,7 +291,7 @@ async function generateClient(options) {
 
     if (hasBody) {
       const bodyType = SEPARATE_TYPES
-        ? generateTypeName(route, method, '$RequestBody')
+        ? generateTypeName(route, method, 'RequestBody', accumulatedParams)
         : zodDefToTypeScript(methodSchema.body);
       const bodyRequired =
         bodyType !== 'any' && hasRequiredFields(methodSchema.body);
@@ -266,7 +302,7 @@ async function generateClient(options) {
 
     if (hasQuery) {
       const queryType = SEPARATE_TYPES
-        ? generateTypeName(route, method, '$RequestQuery')
+        ? generateTypeName(route, method, 'RequestQuery', accumulatedParams)
         : zodDefToTypeScript(methodSchema.query);
       const queryRequired =
         queryType !== 'any' && hasRequiredFields(methodSchema.query);
@@ -398,7 +434,7 @@ async function generateClient(options) {
         /:(\w+)/g,
         (match, paramName) => `\${${paramName}}`,
       );
-      output += `${indent}${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate)},\n`;
+      output += `${indent}${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate, accumulatedParams)},\n`;
     });
 
     // Generate static children
@@ -425,7 +461,11 @@ async function generateClient(options) {
     // Generate method signatures at this level
     node.methods.forEach((route, method) => {
       const methodLower = method.toLowerCase();
-      const signature = generateMethodSignature(route, method);
+      const signature = generateMethodSignature(
+        route,
+        method,
+        accumulatedParams,
+      );
       signatures.push(`${methodLower}: ${signature}`);
     });
 
@@ -469,7 +509,12 @@ async function generateClient(options) {
 
       // Collect response type
       if (methodSchema.response) {
-        const typeName = generateTypeName(route, method, '$ResponseBody');
+        const typeName = generateTypeName(
+          route,
+          method,
+          'ResponseBody',
+          accumulatedParams,
+        );
         if (!typeDefinitions.has(typeName)) {
           typeDefinitions.set(typeName, {
             name: typeName,
@@ -480,7 +525,12 @@ async function generateClient(options) {
 
       // Collect body type
       if (methodSchema.body !== undefined) {
-        const typeName = generateTypeName(route, method, '$RequestBody');
+        const typeName = generateTypeName(
+          route,
+          method,
+          'RequestBody',
+          accumulatedParams,
+        );
         if (!typeDefinitions.has(typeName)) {
           typeDefinitions.set(typeName, {
             name: typeName,
@@ -491,7 +541,12 @@ async function generateClient(options) {
 
       // Collect query type
       if (methodSchema.query !== undefined) {
-        const typeName = generateTypeName(route, method, '$RequestQuery');
+        const typeName = generateTypeName(
+          route,
+          method,
+          'RequestQuery',
+          accumulatedParams,
+        );
         if (!typeDefinitions.has(typeName)) {
           typeDefinitions.set(typeName, {
             name: typeName,
