@@ -105,6 +105,45 @@ async function generateClient(options) {
         return 'never';
       case 'null':
         return 'null';
+      case 'literal':
+        // Literal type: represents a specific value (e.g., z.literal("hello") or z.literal(42))
+        // Can have either a single 'value' or a 'values' array
+        if (def.values && Array.isArray(def.values)) {
+          // Multiple literal values (union of literals) or single value in array
+          const literalTypes = def.values.map((value) => {
+            if (typeof value === 'string') {
+              return `"${value}"`;
+            } else if (typeof value === 'boolean') {
+              return String(value);
+            } else if (typeof value === 'number') {
+              return String(value);
+            } else if (value === null) {
+              return 'null';
+            } else {
+              return JSON.stringify(value);
+            }
+          });
+          return literalTypes.join(' | ');
+        } else if (def.value !== undefined) {
+          // Single literal value
+          if (typeof def.value === 'string') {
+            return `"${def.value}"`;
+          } else if (
+            typeof def.value === 'boolean' ||
+            typeof def.value === 'number'
+          ) {
+            return String(def.value);
+          } else if (def.value === null) {
+            return 'null';
+          } else {
+            return JSON.stringify(def.value);
+          }
+        } else {
+          log.debug(
+            `zodDefToTypeScript: Returning 'any' - Literal type has no value or values array. Def: ${JSON.stringify(def)}`,
+          );
+          return 'any';
+        }
       case 'optional':
         return zodDefToTypeScript(def.innerType, true);
       case 'nullable':
