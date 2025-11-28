@@ -146,6 +146,17 @@ async function generateClient(options) {
         }
       case 'optional':
         return zodDefToTypeScript(def.innerType, true);
+      case 'default':
+        // Default type: has a default value, but the TypeScript type is the inner type
+        // The defaultValue is for runtime validation only, doesn't affect the type
+        if (def.innerType) {
+          return zodDefToTypeScript(def.innerType);
+        } else {
+          log.debug(
+            `zodDefToTypeScript: Returning 'any' - Default type has no innerType. Def: ${JSON.stringify(def)}`,
+          );
+          return 'any';
+        }
       case 'nullable':
         // Nullable type: T | null
         const nullableInnerType = def.innerType
