@@ -146,10 +146,7 @@ export function zodDefToTypeScript(
  * @param log - Logger instance
  * @returns TypeScript type string
  */
-function convertEnumType(
-  def: ZodDef['def'],
-  log: Logger | null,
-): string {
+function convertEnumType(def: ZodDef['def'], log: Logger | null): string {
   if (!def) return 'string';
 
   if (def.enum && Array.isArray(def.enum)) {
@@ -173,10 +170,7 @@ function convertEnumType(
  * @param log - Logger instance
  * @returns TypeScript type string
  */
-function convertLiteralType(
-  def: ZodDef['def'],
-  log: Logger | null,
-): string {
+function convertLiteralType(def: ZodDef['def'], log: Logger | null): string {
   if (!def) return 'any';
 
   // Literal type: represents a specific value (e.g., z.literal("hello") or z.literal(42))
@@ -263,7 +257,16 @@ function convertArrayType(def: ZodDef['def'], log: Logger | null): string {
         );
         return 'any';
       })();
-  return `${elementType}[]`;
+
+  // If the element type contains a union (has ' | '), wrap it in parentheses
+  // to ensure correct operator precedence: ({a} | {b})[] instead of {a} | {b}[]
+  // This handles arrays of unions, while unions of arrays are handled by convertUnionType
+  const needsParentheses = elementType.includes(' | ');
+  const wrappedElementType = needsParentheses
+    ? `(${elementType})`
+    : elementType;
+
+  return `${wrappedElementType}[]`;
 }
 
 /**
@@ -320,9 +323,7 @@ function convertUnionType(def: ZodDef['def'], log: Logger | null): string {
  * @param zodDef - Zod schema definition
  * @returns True if the definition has required fields
  */
-export function hasRequiredFields(
-  zodDef: ZodDef | undefined | null,
-): boolean {
+export function hasRequiredFields(zodDef: ZodDef | undefined | null): boolean {
   if (!zodDef || !zodDef.def) return false;
 
   const def = zodDef.def;
@@ -386,4 +387,3 @@ export function getFileUploadInfo(
     maxSize: fileOptions.maxSize || 5242880,
   };
 }
-
