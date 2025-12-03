@@ -97,6 +97,18 @@ export function zodDefToTypeScript(
     case 'optional':
       return zodDefToTypeScript(def.innerType, true, log);
 
+    case 'nonoptional':
+      // Nonoptional type: makes an optional type required again
+      // Just return the inner type (which might have been optional, but nonoptional removes that)
+      if (def.innerType) {
+        return zodDefToTypeScript(def.innerType, isOptional, log);
+      } else {
+        log?.debug(
+          `zodDefToTypeScript: Returning 'any' - Nonoptional type has no innerType. Def: ${JSON.stringify(def)}`,
+        );
+        return 'any';
+      }
+
     case 'default':
       // Default type: has a default value, but the TypeScript type is the inner type
       // The defaultValue is for runtime validation only, doesn't affect the type
