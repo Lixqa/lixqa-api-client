@@ -2,7 +2,7 @@
 
 /**
  * Lixqa API Client Generator CLI
- * 
+ *
  * This is the main entry point for the API client generator.
  * It sets up the command-line interface and delegates to the generator module.
  */
@@ -35,10 +35,13 @@ program
     '--separate-types',
     'Generate separate types for query, body, response, and params',
   )
+  .option(
+    '--use-types-v2',
+    'Use RouteType generic for type definitions (requires --separate-types)',
+  )
   .action(async (options) => {
     await generateClient(options);
   });
 
 // Parse command-line arguments
 program.parse();
-

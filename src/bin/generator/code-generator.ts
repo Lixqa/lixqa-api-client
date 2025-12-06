@@ -17,6 +17,7 @@ import {
 } from './name-generator.js';
 import type { Logger } from './logger.js';
 import type { TreeNode } from './tree-builder.js';
+import { generateRouteTypeReference } from './type-generator-v2.js';
 
 /**
  * Generates a request call string for a route method
@@ -34,15 +35,20 @@ export function generateRequestCall(
   pathTemplate: string,
   accumulatedParams: string[] = [],
   separateTypes = false,
+  useTypesV2 = false,
   log: Logger | null = null,
 ): string {
-  const methodSchema = (route.schema?.[method] || {}) as MethodSchema | undefined;
+  const methodSchema = (route.schema?.[method] || {}) as
+    | MethodSchema
+    | undefined;
   const responseType =
-    separateTypes && methodSchema?.response
-      ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
-      : methodSchema?.response
-        ? zodDefToTypeScript(methodSchema.response, false, log)
-        : 'any';
+    useTypesV2 && methodSchema?.response
+      ? generateRouteTypeReference(route, method, 'ResponseBody')
+      : separateTypes && methodSchema?.response
+        ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
+        : methodSchema?.response
+          ? zodDefToTypeScript(methodSchema.response, false, log)
+          : 'any';
 
   const hasFiles = hasFileUploads(methodSchema);
 
@@ -78,19 +84,24 @@ export function generateMethodSignature(
   method: string,
   accumulatedParams: string[] = [],
   separateTypes = false,
+  useTypesV2 = false,
   log: Logger | null = null,
 ): string {
-  const methodSchema = (route.schema?.[method] || {}) as MethodSchema | undefined;
+  const methodSchema = (route.schema?.[method] || {}) as
+    | MethodSchema
+    | undefined;
   const hasBody = methodSchema?.body !== undefined;
   const hasQuery = methodSchema?.query !== undefined;
   const hasFiles = hasFileUploads(methodSchema);
 
   const responseType =
-    separateTypes && methodSchema?.response
-      ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
-      : methodSchema?.response
-        ? zodDefToTypeScript(methodSchema.response, false, log)
-        : 'any';
+    useTypesV2 && methodSchema?.response
+      ? generateRouteTypeReference(route, method, 'ResponseBody')
+      : separateTypes && methodSchema?.response
+        ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
+        : methodSchema?.response
+          ? zodDefToTypeScript(methodSchema.response, false, log)
+          : 'any';
 
   if (!hasBody && !hasQuery && !hasFiles)
     return `() => Promise<${responseType}>`;
@@ -99,9 +110,11 @@ export function generateMethodSignature(
   let hasRequiredOptions = false;
 
   if (hasBody) {
-    const bodyType = separateTypes
-      ? generateTypeName(route, method, 'RequestBody', accumulatedParams)
-      : zodDefToTypeScript(methodSchema!.body, false, log);
+    const bodyType = useTypesV2
+      ? generateRouteTypeReference(route, method, 'RequestBody')
+      : separateTypes
+        ? generateTypeName(route, method, 'RequestBody', accumulatedParams)
+        : zodDefToTypeScript(methodSchema!.body, false, log);
     const bodyRequired =
       bodyType !== 'any' && hasRequiredFields(methodSchema!.body);
     const bodyOptional = bodyRequired ? '' : '?';
@@ -110,9 +123,11 @@ export function generateMethodSignature(
   }
 
   if (hasQuery) {
-    const queryType = separateTypes
-      ? generateTypeName(route, method, 'RequestQuery', accumulatedParams)
-      : zodDefToTypeScript(methodSchema!.query, false, log);
+    const queryType = useTypesV2
+      ? generateRouteTypeReference(route, method, 'RequestQuery')
+      : separateTypes
+        ? generateTypeName(route, method, 'RequestQuery', accumulatedParams)
+        : zodDefToTypeScript(methodSchema!.query, false, log);
     const queryRequired =
       queryType !== 'any' && hasRequiredFields(methodSchema!.query);
     const queryOptional = queryRequired ? '' : '?';
@@ -159,6 +174,7 @@ export function generateFromTree(
   indent: string,
   accumulatedParams: string[] = [],
   separateTypes = false,
+  useTypesV2 = false,
   log: Logger | null = null,
 ): string {
   let output = '';
@@ -170,7 +186,7 @@ export function generateFromTree(
       /:(\w+)/g,
       (_match, paramName) => `\${${paramName}}`,
     );
-    output += `${indent}${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate, accumulatedParams, separateTypes, log)},\n`;
+    output += `${indent}${methodLower}: (requestOptions: any = {}) => ${generateRequestCall(route, method, pathTemplate, accumulatedParams, separateTypes, useTypesV2, log)},\n`;
   });
 
   // Generate static children
@@ -181,6 +197,7 @@ export function generateFromTree(
       indent + '  ',
       accumulatedParams,
       separateTypes,
+      useTypesV2,
       log,
     );
     output += `${indent}},\n`;
@@ -195,6 +212,7 @@ export function generateFromTree(
       indent + '  ',
       allParams,
       separateTypes,
+      useTypesV2,
       log,
     );
     output += `${indent}}),\n`;
@@ -217,6 +235,7 @@ export function generateInterfaceFromTree(
   indent: string,
   accumulatedParams: string[] = [],
   separateTypes = false,
+  useTypesV2 = false,
   log: Logger | null = null,
 ): string {
   const signatures: string[] = [];
@@ -229,6 +248,7 @@ export function generateInterfaceFromTree(
       method,
       accumulatedParams,
       separateTypes,
+      useTypesV2,
       log,
     );
     signatures.push(`${methodLower}: ${signature}`);
@@ -241,6 +261,7 @@ export function generateInterfaceFromTree(
       indent + '  ',
       accumulatedParams,
       separateTypes,
+      useTypesV2,
       log,
     );
     if (childSigs) {
@@ -256,12 +277,11 @@ export function generateInterfaceFromTree(
       indent + '  ',
       allParams,
       separateTypes,
+      useTypesV2,
       log,
     );
     if (childSigs) {
-      signatures.push(
-        `$: (${paramName}: string | number) => { ${childSigs} }`,
-      );
+      signatures.push(`$: (${paramName}: string | number) => { ${childSigs} }`);
     }
   });
 
@@ -284,7 +304,9 @@ export function collectTypesFromTree(
 ): Map<string, TypeDefinition> {
   // Collect method types at this level
   node.methods.forEach((route, method) => {
-    const methodSchema = (route.schema?.[method] || {}) as MethodSchema | undefined;
+    const methodSchema = (route.schema?.[method] || {}) as
+      | MethodSchema
+      | undefined;
 
     // Collect response type
     if (methodSchema?.response) {
@@ -360,4 +382,3 @@ export function collectTypesFromTree(
 
   return typeDefinitions;
 }
-

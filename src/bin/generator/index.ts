@@ -8,7 +8,7 @@ import path from 'path';
 import prettier from 'prettier';
 import packageJson from '../../../package.json' with { type: 'json' };
 
-import { createLogger, type Logger } from './logger.js';
+import { createLogger } from './logger.js';
 import { fetchApiSchema, type Route } from './fetch-schema.js';
 import { processRoutes, buildCompleteTree } from './tree-builder.js';
 import {
@@ -16,6 +16,10 @@ import {
   generateInterfaceFromTree,
   collectTypesFromTree,
 } from './code-generator.js';
+import {
+  collectRouteTypesV2,
+  generateRouteTypeMapCode,
+} from './type-generator-v2.js';
 
 /**
  * Generator options
@@ -25,6 +29,7 @@ export interface GeneratorOptions {
   output: string;
   debug?: boolean;
   separateTypes?: boolean;
+  useTypesV2?: boolean;
   format?: boolean;
 }
 
@@ -37,6 +42,12 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
   const OUTPUT = options.output;
   const DEBUG = options.debug ?? false;
   const SEPARATE_TYPES = options.separateTypes || false;
+  const USE_TYPES_V2 = options.useTypesV2 || false;
+
+  // Validate: useTypesV2 requires separateTypes
+  if (USE_TYPES_V2 && !SEPARATE_TYPES) {
+    throw new Error('--use-types-v2 requires --separate-types to be enabled');
+  }
 
   const log = createLogger(DEBUG);
 
@@ -61,7 +72,98 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
 
   // Collect types if separate-types is enabled
   let typeDefinitions = new Map<string, { name: string; type: string }>();
-  if (SEPARATE_TYPES) {
+  let routeTypeMapCode = '';
+  let routeTypeHelperCode = '';
+
+  if (USE_TYPES_V2) {
+    // Use v2 type generation
+    log.debug('Collecting route types (v2)...');
+    const routeTypeMap = collectRouteTypesV2(tree, [], {}, '', log);
+    routeTypeMapCode = generateRouteTypeMapCode(routeTypeMap);
+
+    // RouteType helper code (embedded to avoid file system issues in dist)
+    routeTypeHelperCode = `export type RouteTypePart = 'RequestBody' | 'ResponseBody' | 'RequestQuery' | 'Params';
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+
+export type RoutePath = keyof RouteTypeMap & string;
+
+export type RouteMethods<P extends RoutePath> = P extends keyof RouteTypeMap
+  ? keyof RouteTypeMap[P] & HttpMethod
+  : never;
+
+export type RouteTypeParts<
+  P extends RoutePath,
+  M extends HttpMethod,
+> = P extends keyof RouteTypeMap
+  ? M extends keyof RouteTypeMap[P]
+    ? keyof RouteTypeMap[P][M] & RouteTypePart
+    : never
+  : never;
+
+type ValidMethodOrParams<P extends RoutePath> = P extends keyof RouteTypeMap
+  ? {
+      [K in keyof RouteTypeMap[P]]: K extends HttpMethod ? K : never;
+    }[keyof RouteTypeMap[P]] extends infer Methods
+    ? {
+        [Method in keyof RouteTypeMap[P]]: Method extends HttpMethod
+          ? RouteTypeMap[P][Method] extends { Params: any }
+            ? true
+            : false
+          : false;
+      }[keyof RouteTypeMap[P]] extends true
+      ? Methods | 'Params'
+      : Methods
+    : never
+  : never;
+
+type ValidTypePartForMethod<
+  P extends RoutePath,
+  M extends HttpMethod,
+> = P extends keyof RouteTypeMap
+  ? M extends keyof RouteTypeMap[P]
+    ? {
+        [K in keyof RouteTypeMap[P][M]]: K extends RouteTypePart
+          ? K extends 'Params'
+            ? never
+            : K
+          : never;
+      }[keyof RouteTypeMap[P][M]]
+    : never
+  : never;
+
+export type RouteType<
+  P extends RoutePath,
+  M extends ValidMethodOrParams<P> = never,
+  T extends M extends 'Params'
+    ? never
+    : M extends HttpMethod
+    ? ValidTypePartForMethod<P, M>
+    : never = M extends 'Params'
+    ? never
+    : M extends HttpMethod
+    ? ValidTypePartForMethod<P, M>
+    : never,
+> = P extends keyof RouteTypeMap
+  ? M extends 'Params'
+    ? P extends keyof RouteTypeMap
+      ? {
+          [Method in keyof RouteTypeMap[P]]: Method extends HttpMethod
+            ? 'Params' extends keyof RouteTypeMap[P][Method]
+              ? RouteTypeMap[P][Method]['Params']
+              : never
+            : never;
+        }[keyof RouteTypeMap[P]]
+      : never
+    : M extends keyof RouteTypeMap[P]
+    ? T extends keyof RouteTypeMap[P][M]
+      ? RouteTypeMap[P][M][T]
+      : never
+    : never
+  : never;
+`;
+  } else if (SEPARATE_TYPES) {
+    // Use v1 type generation
     log.debug('Collecting type definitions...');
     typeDefinitions = collectTypesFromTree(tree, [], typeDefinitions, log);
   }
@@ -69,7 +171,14 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
   // Generate API implementation
   log.debug('Generating API implementation...');
   let apiImpl = 'return {\n';
-  apiImpl += generateFromTree(tree, '  ', [], SEPARATE_TYPES, log);
+  apiImpl += generateFromTree(
+    tree,
+    '  ',
+    [],
+    SEPARATE_TYPES,
+    USE_TYPES_V2,
+    log,
+  );
   apiImpl += '};';
 
   // Generate TypeScript interface
@@ -80,6 +189,7 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
     '  ',
     [],
     SEPARATE_TYPES,
+    USE_TYPES_V2,
     log,
   );
   if (interfaceSig) {
@@ -89,7 +199,11 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
 
   // Generate type definitions
   let typeDefsCode = '';
-  if (SEPARATE_TYPES && typeDefinitions.size > 0) {
+  if (USE_TYPES_V2) {
+    // Generate v2 types: RouteTypeMap first, then helper types that reference it
+    typeDefsCode = `${routeTypeMapCode}\n\n${routeTypeHelperCode}\n\n`;
+  } else if (SEPARATE_TYPES && typeDefinitions.size > 0) {
+    // Generate v1 types: individual type exports
     log.debug(
       `Generating ${typeDefinitions.size} separate type definitions...`,
     );
@@ -164,4 +278,3 @@ export const api: ApiMethods = generateApiObject(request);
     log.success('API client generated successfully!');
   }
 }
-
