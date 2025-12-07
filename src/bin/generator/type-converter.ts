@@ -20,6 +20,7 @@ interface ZodDef {
     values?: unknown[];
     value?: unknown;
     getter?: () => ZodDef;
+    defaultValue?: unknown;
   };
   __fileOptions?: FileOptions;
 }
@@ -110,10 +111,10 @@ export function zodDefToTypeScript(
       }
 
     case 'default':
-      // Default type: has a default value, but the TypeScript type is the inner type
-      // The defaultValue is for runtime validation only, doesn't affect the type
+      // Default type: has a default value, so the field is optional in TypeScript
+      // The inner type is what gets used, but the field itself is optional
       if (def.innerType) {
-        return zodDefToTypeScript(def.innerType, isOptional, log);
+        return zodDefToTypeScript(def.innerType, true, log);
       } else {
         log?.debug(
           `zodDefToTypeScript: Returning 'any' - Default type has no innerType. Def: ${JSON.stringify(def)}`,
@@ -300,7 +301,11 @@ function convertObjectType(def: ZodDef['def'], log: Logger | null): string {
   const props = Object.entries(def.shape)
     .map(([key, value]) => {
       const type = zodDefToTypeScript(value, false, log);
-      const optional = value.def?.type === 'optional' ? '?' : '';
+      // Fields are optional if they have 'optional' or 'default' type
+      const optional =
+        value.def?.type === 'optional' || value.def?.type === 'default'
+          ? '?'
+          : '';
       return `${key}${optional}: ${type}`;
     })
     .join('; ');
@@ -341,7 +346,8 @@ export function hasRequiredFields(zodDef: ZodDef | undefined | null): boolean {
   const def = zodDef.def;
   if (def.type === 'object' && def.shape) {
     return Object.values(def.shape).some(
-      (field) => field.def?.type !== 'optional',
+      (field) =>
+        field.def?.type !== 'optional' && field.def?.type !== 'default',
     );
   }
 
