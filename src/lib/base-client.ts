@@ -126,7 +126,7 @@ export const createRequest = (options: ClientOptions = {}) => {
         isValidationError,
         response.status,
         badRequestType,
-        response.headers,
+        Array.from(response.headers.values()),
         responseBody,
       );
 
