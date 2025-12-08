@@ -20,7 +20,25 @@ export const createRequest = (options: ClientOptions = {}) => {
     method: string,
     requestOptions: { body?: any; query?: any; files?: any } = {},
   ): Promise<T> => {
-    const url = new URL(path, baseUrl);
+    // Parse base URL to preserve its path component
+    const baseUrlObj = new URL(baseUrl);
+    // If path starts with /, remove it so it's relative to base URL's path
+    const relativePath = path.startsWith('/') ? path.slice(1) : path;
+    // Combine base URL path with relative path
+    const fullPath = baseUrlObj.pathname.endsWith('/')
+      ? baseUrlObj.pathname + relativePath
+      : baseUrlObj.pathname + '/' + relativePath;
+    // Construct full URL preserving origin and path
+    const url = new URL(fullPath, baseUrlObj.origin);
+    // Preserve any existing search params and hash from base URL
+    if (baseUrlObj.search) {
+      baseUrlObj.searchParams.forEach((value, key) => {
+        url.searchParams.append(key, value);
+      });
+    }
+    if (baseUrlObj.hash) {
+      url.hash = baseUrlObj.hash;
+    }
     if (requestOptions.query)
       Object.entries(requestOptions.query).forEach(([key, value]) => {
         if (value !== undefined) url.searchParams.append(key, String(value));
