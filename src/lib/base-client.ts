@@ -121,6 +121,15 @@ export const createRequest = (options: ClientOptions = {}) => {
         badRequestType === 'zod' &&
         responseBody?.data;
 
+      console.debug(
+        'isValidationError',
+        isValidationError,
+        response.status,
+        badRequestType,
+        response.headers,
+        responseBody,
+      );
+
       const errorInfo = {
         status: response.status,
         statusText: response.statusText,
