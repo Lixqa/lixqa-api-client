@@ -1,3 +1,5 @@
+import { RequestError, ValidationError } from './errors.js';
+
 export interface ClientOptions {
   baseUrl?: string;
   authToken?: string;
@@ -85,7 +87,55 @@ export const createRequest = (options: ClientOptions = {}) => {
     }
 
     const response = await fetch(url.toString(), fetchOptions);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+    if (!response.ok) {
+      // Collect response headers
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+
+      // Try to parse response body
+      let responseBody: any;
+      const contentType = response.headers.get('content-type');
+      const isJson = contentType?.includes('application/json');
+
+      try {
+        if (isJson) {
+          responseBody = await response.json();
+        } else {
+          responseBody = await response.text();
+        }
+      } catch (e) {
+        // If parsing fails, use empty object
+        responseBody = {};
+      }
+
+      // Check if this is a validation error (BadRequest with zod header)
+      // Use response.headers.get() which handles case-insensitivity
+      const badRequestType = response.headers
+        .get('x-bad-request-type')
+        ?.toLowerCase();
+      const isValidationError =
+        response.status === 400 &&
+        badRequestType === 'zod' &&
+        responseBody?.data;
+
+      const errorInfo = {
+        status: response.status,
+        statusText: response.statusText,
+        url: url.toString(),
+        method: method.toUpperCase(),
+        headers,
+        body: responseBody,
+      };
+
+      if (isValidationError) {
+        throw new ValidationError(errorInfo, responseBody.data);
+      } else {
+        throw new RequestError(errorInfo);
+      }
+    }
 
     // Handle 204 No Content responses - no body to parse
     if (response.status === 204) {
