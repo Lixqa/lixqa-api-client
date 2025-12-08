@@ -20,7 +20,7 @@ export const createRequest = (options: ClientOptions = {}) => {
     method: string,
     requestOptions: { body?: any; query?: any; files?: any } = {},
   ): Promise<T> => {
-    const url = new URL(baseUrl + path);
+    const url = new URL(path, baseUrl);
     if (requestOptions.query)
       Object.entries(requestOptions.query).forEach(([key, value]) => {
         if (value !== undefined) url.searchParams.append(key, String(value));
