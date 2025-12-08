@@ -129,7 +129,8 @@ export class ValidationError extends RequestError {
 
   /**
    * Flattens the validation error data into a single object with dot-notation keys
-   * Example: { body: { email: "error" } } becomes { "body.email": "error" }
+   * Ignores `_errors` in paths, so `body.discordId._errors` becomes `body.discordId`
+   * Example: { body: { discordId: { _errors: ["error"] } } } becomes { "body.discordId": ["error"] }
    */
   flatten(): Record<string, any> {
     if (!this.validationData) {
@@ -142,12 +143,22 @@ export class ValidationError extends RequestError {
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const value = obj[key];
-          const newKey = prefix ? `${prefix}.${key}` : key;
 
-          if (value && typeof value === 'object' && !Array.isArray(value)) {
-            flattenObject(value, newKey);
-          } else {
-            result[newKey] = value;
+          // If this is an `_errors` array, use the current prefix (without `_errors`)
+          if (key === '_errors' && Array.isArray(value)) {
+            if (prefix) {
+              result[prefix] = value;
+            } else {
+              result['root'] = value;
+            }
+          } else if (key !== '_errors') {
+            const newKey = prefix ? `${prefix}.${key}` : key;
+
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              flattenObject(value, newKey);
+            } else {
+              result[newKey] = value;
+            }
           }
         }
       }
@@ -167,11 +178,20 @@ export class ValidationError extends RequestError {
 
   /**
    * Gets the error value at a specific path
-   * @param path - Dot-notation path (e.g., "body.email" or "query.page")
+   * Automatically handles `_errors` - you can use "body.discordId" instead of "body.discordId._errors"
+   * @param path - Dot-notation path (e.g., "body.discordId" or "query.page")
    */
   getErrorAtPath(path: string): any {
     const flattened = this.flatten();
-    return flattened[path];
+    // Try the path as-is first
+    if (flattened[path] !== undefined) {
+      return flattened[path];
+    }
+    // If not found and path doesn't end with `_errors`, try with `_errors` suffix for backward compatibility
+    if (!path.endsWith('._errors')) {
+      return flattened[`${path}._errors`];
+    }
+    return undefined;
   }
 
   /**
