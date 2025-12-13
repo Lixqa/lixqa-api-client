@@ -1,15 +1,66 @@
 import { RequestError, ValidationError } from './errors.js';
 
+export interface ProxyRequest {
+  url: string;
+  method: string;
+  body?: string | FormData;
+  headers: Record<string, string>;
+}
+
+export interface ProxyResponse {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: any;
+  ok: boolean;
+}
+
+export type ProxyFn = (
+  request: ProxyRequest,
+) => Promise<ProxyResponse | Response>;
+
 export interface ClientOptions {
   baseUrl?: string;
   authToken?: string;
   headers?: Record<string, string>;
   retryOnRatelimit?: number | false;
+  proxyFn?: ProxyFn;
 }
 
 // Helper function to sleep/wait
 const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+// Helper function to normalize proxy response to Response-like object
+const normalizeProxyResponse = (
+  result: ProxyResponse | Response,
+  url: string,
+): Response => {
+  // If it's already a Response, return it
+  if (result instanceof Response) {
+    return result;
+  }
+
+  // Otherwise, create a Response-like object
+  const proxyResponse = result as ProxyResponse;
+  const headers = new Headers(proxyResponse.headers);
+
+  // Create a Response object from the proxy response
+  // We'll use Response constructor if available, otherwise create a mock
+  let body: string | undefined;
+  if (typeof proxyResponse.body === 'string') {
+    body = proxyResponse.body;
+  } else {
+    body = JSON.stringify(proxyResponse.body);
+  }
+
+  // Create a Response object
+  return new Response(body, {
+    status: proxyResponse.status,
+    statusText: proxyResponse.statusText,
+    headers: headers,
+  });
 };
 
 export const createRequest = (options: ClientOptions = {}) => {
@@ -26,6 +77,7 @@ export const createRequest = (options: ClientOptions = {}) => {
   const retryOnRatelimit = options.retryOnRatelimit ?? false;
   const maxRetries =
     typeof retryOnRatelimit === 'number' ? retryOnRatelimit : 0;
+  const proxyFn = options.proxyFn;
 
   return async <T = any>(
     path: string,
@@ -63,6 +115,8 @@ export const createRequest = (options: ClientOptions = {}) => {
         headers: { ...defaultHeaders },
       };
 
+      let requestBody: string | FormData | undefined;
+
       // Handle file uploads with FormData
       if (requestOptions.files) {
         const formData = new FormData();
@@ -91,13 +145,29 @@ export const createRequest = (options: ClientOptions = {}) => {
           });
         }
 
+        requestBody = formData;
         fetchOptions.body = formData;
         // Remove Content-Type header for FormData (browser will set it with boundary)
         delete (fetchOptions.headers as any)['Content-Type'];
       } else if (requestOptions.body) {
-        fetchOptions.body = JSON.stringify(requestOptions.body);
+        requestBody = JSON.stringify(requestOptions.body);
+        fetchOptions.body = requestBody;
       }
 
+      // Use proxyFn if provided
+      if (proxyFn) {
+        const proxyRequest: ProxyRequest = {
+          url: url.toString(),
+          method: method.toUpperCase(),
+          body: requestBody,
+          headers: { ...defaultHeaders },
+        };
+
+        const proxyResult = await proxyFn(proxyRequest);
+        return normalizeProxyResponse(proxyResult, url.toString());
+      }
+
+      // Otherwise use regular fetch
       return await fetch(url.toString(), fetchOptions);
     };
 
