@@ -3,7 +3,7 @@ import { RequestError, ValidationError } from './errors.js';
 export interface ProxyRequest {
   url: string;
   method: string;
-  body?: string | FormData;
+  body?: any; // Raw body object (will be FormData for file uploads, or the raw object for JSON)
   headers: Record<string, string>;
 }
 
@@ -156,10 +156,14 @@ export const createRequest = (options: ClientOptions = {}) => {
 
       // Use proxyFn if provided
       if (proxyFn) {
+        // Pass the raw body object, not the stringified version
+        // The proxyFn can decide how to handle it (stringify for JSON, use FormData as-is, etc.)
         const proxyRequest: ProxyRequest = {
           url: url.toString(),
           method: method.toUpperCase(),
-          body: requestBody,
+          body: requestOptions.files
+            ? requestBody // FormData for file uploads
+            : requestOptions.body, // Raw object for JSON requests
           headers: { ...defaultHeaders },
         };
 
