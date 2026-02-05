@@ -21,6 +21,10 @@ interface ZodDef {
     value?: unknown;
     getter?: () => ZodDef;
     defaultValue?: unknown;
+    /** Pipe type: input schema */
+    in?: ZodDef;
+    /** Pipe type: output schema (e.g. transform) */
+    out?: ZodDef;
   };
   __fileOptions?: FileOptions;
 }
@@ -144,6 +148,23 @@ export function zodDefToTypeScript(
 
     case 'void':
       return 'void';
+
+    case 'pipe': {
+      // Pipe: input schema -> output schema (e.g. object then transform). Use output type when it's
+      // a concrete type; when output is a transform we use the input type as the shape.
+      const pipeIn = def.in;
+      const pipeOut = def.out;
+      if (pipeOut?.def?.type !== 'transform' && pipeOut) {
+        return zodDefToTypeScript(pipeOut, isOptional, log);
+      }
+      if (pipeIn) {
+        return zodDefToTypeScript(pipeIn, isOptional, log);
+      }
+      log?.debug(
+        `zodDefToTypeScript: Returning 'any' - Pipe type has no in or usable out. Def: ${JSON.stringify(def)}`,
+      );
+      return 'any';
+    }
 
     default:
       log?.debug(
