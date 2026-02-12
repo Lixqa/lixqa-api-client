@@ -1,6 +1,6 @@
 {
   "name": "@lixqa-api/client",
-  "version": "1.0.47",
+  "version": "1.0.48",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
