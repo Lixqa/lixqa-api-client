@@ -39,6 +39,10 @@ program
     '--use-types-v2',
     'Use RouteType generic for type definitions (requires --separate-types)',
   )
+  .option(
+    '--with-schemas',
+    'Emit runtime Zod schemas and getSchema(path, method, part) (requires --use-types-v2)',
+  )
   .action(async (options) => {
     await generateClient(options);
   });

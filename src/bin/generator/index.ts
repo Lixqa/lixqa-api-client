@@ -20,6 +20,10 @@ import {
   collectRouteTypesV2,
   generateRouteTypeMapCode,
 } from './type-generator-v2.js';
+import {
+  collectRouteSchemasV2,
+  generateRouteSchemaMapAndGetSchema,
+} from './schema-generator.js';
 
 /**
  * Generator options
@@ -30,6 +34,7 @@ export interface GeneratorOptions {
   debug?: boolean;
   separateTypes?: boolean;
   useTypesV2?: boolean;
+  withSchemas?: boolean;
   format?: boolean;
 }
 
@@ -43,10 +48,15 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
   const DEBUG = options.debug ?? false;
   const SEPARATE_TYPES = options.separateTypes || false;
   const USE_TYPES_V2 = options.useTypesV2 || false;
+  const WITH_SCHEMAS = options.withSchemas || false;
 
   // Validate: useTypesV2 requires separateTypes
   if (USE_TYPES_V2 && !SEPARATE_TYPES) {
     throw new Error('--use-types-v2 requires --separate-types to be enabled');
+  }
+  // Validate: withSchemas requires useTypesV2
+  if (WITH_SCHEMAS && !USE_TYPES_V2) {
+    throw new Error('--with-schemas requires --use-types-v2 to be enabled');
   }
 
   const log = createLogger(DEBUG);
@@ -75,11 +85,19 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
   let routeTypeMapCode = '';
   let routeTypeHelperCode = '';
 
+  let routeSchemaCode = '';
+
   if (USE_TYPES_V2) {
     // Use v2 type generation
     log.debug('Collecting route types (v2)...');
     const routeTypeMap = collectRouteTypesV2(tree, [], {}, '', log);
     routeTypeMapCode = generateRouteTypeMapCode(routeTypeMap);
+
+    if (WITH_SCHEMAS) {
+      log.debug('Collecting route schemas...');
+      const routeSchemaMap = collectRouteSchemasV2(tree, {}, log);
+      routeSchemaCode = generateRouteSchemaMapAndGetSchema(routeSchemaMap);
+    }
 
     // RouteType helper code (embedded to avoid file system issues in dist)
     routeTypeHelperCode = `export type RouteTypePart = 'RequestBody' | 'ResponseBody' | 'RequestQuery' | 'Params';
@@ -197,11 +215,14 @@ export type RouteType<
   }
   apiInterface += '}\n';
 
-  // Generate type definitions
+  // Generate type definitions and optional schema map
   let typeDefsCode = '';
   if (USE_TYPES_V2) {
     // Generate v2 types: RouteTypeMap first, then helper types that reference it
     typeDefsCode = `${routeTypeMapCode}\n\n${routeTypeHelperCode}\n\n`;
+    if (WITH_SCHEMAS && routeSchemaCode) {
+      typeDefsCode += `${routeSchemaCode}\n\n`;
+    }
   } else if (SEPARATE_TYPES && typeDefinitions.size > 0) {
     // Generate v1 types: individual type exports
     log.debug(
@@ -213,6 +234,8 @@ export type RouteType<
     typeDefsCode += '\n';
   }
 
+  const zodImport = WITH_SCHEMAS ? "import { z } from 'zod';\n\n" : '';
+
   // Assemble final generated code
   const generatedCode = `/**
  * Auto-generated API client
@@ -223,8 +246,7 @@ export type RouteType<
  */
 
 import { createRequest, createClient as createBaseClient, type ClientOptions } from '${packageJson.name}';
-
-${typeDefsCode}${apiInterface}
+${zodImport}${typeDefsCode}${apiInterface}
 
 const request = createRequest({ baseUrl: '${API_BASE}' });
 
