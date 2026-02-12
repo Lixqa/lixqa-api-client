@@ -18,5 +18,9 @@ export type {
   ValidationErrorResponse,
 } from './lib/errors.js';
 
+// Re-export zod so generated clients with --with-schemas can import from this package
+export { z } from 'zod';
+export type { ZodType, ZodTypeDef } from 'zod';
+
 // The main functionality is provided by the CLI tool
 // Run: npx @lixqa-api/client generate --help

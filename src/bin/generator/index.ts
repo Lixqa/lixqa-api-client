@@ -234,7 +234,9 @@ export type RouteType<
     typeDefsCode += '\n';
   }
 
-  const zodImport = WITH_SCHEMAS ? "import { z } from 'zod';\n\n" : '';
+  const zodImport = WITH_SCHEMAS
+    ? `import { z } from '${packageJson.name}';\n\n`
+    : '';
 
   // Assemble final generated code
   const generatedCode = `/**
