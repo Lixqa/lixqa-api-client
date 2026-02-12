@@ -93,6 +93,16 @@ export function zodDefToZodSchemaCode(
         return `z.literal(${JSON.stringify(v)})`;
       }
       if (def.values && Array.isArray(def.values) && def.values.length > 0) {
+        const first = def.values[0];
+        if (def.values.length === 1) {
+          // Single literal: emit z.literal(...), not z.union([...]) (z.union needs ≥2 options)
+          if (typeof first === 'string')
+            return `z.literal(${JSON.stringify(first)})`;
+          if (typeof first === 'number' || typeof first === 'boolean')
+            return `z.literal(${first})`;
+          if (first === null) return 'z.null()';
+          return `z.literal(${JSON.stringify(first)})`;
+        }
         const literals = def.values
           .map((v) => {
             if (typeof v === 'string') return `z.literal(${JSON.stringify(v)})`;
@@ -179,6 +189,9 @@ export function zodDefToZodSchemaCode(
       if (!def.options || !Array.isArray(def.options)) {
         log?.debug(`zodDefToZodSchemaCode: Union has no options.`);
         return 'z.any()';
+      }
+      if (def.options.length === 1) {
+        return zodDefToZodSchemaCode(def.options[0], log);
       }
       const optionsCode = def.options
         .map((opt) => zodDefToZodSchemaCode(opt, log))
