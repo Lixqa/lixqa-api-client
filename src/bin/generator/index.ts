@@ -104,6 +104,36 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
+type Primitive =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined;
+
+type Builtin =
+  | Primitive
+  | Function
+  | Date
+  | RegExp
+  | Error
+  | Map<any, any>
+  | WeakMap<any, any>
+  | Set<any>
+  | WeakSet<any>
+  | Promise<any>;
+
+type Simplify<T> =
+  T extends Builtin
+    ? T
+    : T extends (infer U)[]
+      ? Simplify<U>[]
+      : T extends object
+        ? { [K in keyof T]: Simplify<T[K]> }
+        : T;
+
 export type RoutePath = keyof RouteTypeMap & string;
 
 export type RouteMethods<P extends RoutePath> = P extends keyof RouteTypeMap

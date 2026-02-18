@@ -17,7 +17,7 @@ import {
 } from './name-generator.js';
 import type { Logger } from './logger.js';
 import type { TreeNode } from './tree-builder.js';
-import { generateRouteTypeReference } from './type-generator-v2.js';
+import { generateSimplifiedRouteTypeReference } from './type-generator-v2.js';
 
 /**
  * Generates a request call string for a route method
@@ -43,7 +43,7 @@ export function generateRequestCall(
     | undefined;
   const responseType =
     useTypesV2 && methodSchema?.response
-      ? generateRouteTypeReference(route, method, 'ResponseBody')
+      ? generateSimplifiedRouteTypeReference(route, method, 'ResponseBody')
       : separateTypes && methodSchema?.response
         ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
         : methodSchema?.response
@@ -96,7 +96,7 @@ export function generateMethodSignature(
 
   const responseType =
     useTypesV2 && methodSchema?.response
-      ? generateRouteTypeReference(route, method, 'ResponseBody')
+      ? generateSimplifiedRouteTypeReference(route, method, 'ResponseBody')
       : separateTypes && methodSchema?.response
         ? generateTypeName(route, method, 'ResponseBody', accumulatedParams)
         : methodSchema?.response
@@ -111,7 +111,7 @@ export function generateMethodSignature(
 
   if (hasBody) {
     const bodyType = useTypesV2
-      ? generateRouteTypeReference(route, method, 'RequestBody')
+      ? generateSimplifiedRouteTypeReference(route, method, 'RequestBody')
       : separateTypes
         ? generateTypeName(route, method, 'RequestBody', accumulatedParams)
         : zodDefToTypeScript(methodSchema!.body, false, log);
@@ -124,7 +124,7 @@ export function generateMethodSignature(
 
   if (hasQuery) {
     const queryType = useTypesV2
-      ? generateRouteTypeReference(route, method, 'RequestQuery')
+      ? generateSimplifiedRouteTypeReference(route, method, 'RequestQuery')
       : separateTypes
         ? generateTypeName(route, method, 'RequestQuery', accumulatedParams)
         : zodDefToTypeScript(methodSchema!.query, false, log);

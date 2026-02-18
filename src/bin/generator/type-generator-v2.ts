@@ -210,3 +210,18 @@ export function generateRouteTypeReference(
   // Changed order: Path first, then Method, then TypePart for better intellisense
   return `RouteType<"${normalizedPath}", "${normalizedMethod}", "${typePart}">`;
 }
+
+/**
+ * Generates a simplified direct type reference for API signatures.
+ * Emits Simplify<RouteTypeMap["path"]["method"]["part"]> so hover shows the
+ * resolved type instead of RouteType<...>.
+ */
+export function generateSimplifiedRouteTypeReference(
+  route: Route,
+  method: string,
+  typePart: 'RequestBody' | 'ResponseBody' | 'RequestQuery' | 'Params',
+): string {
+  const normalizedPath = normalizePath(route.path);
+  const normalizedMethod = normalizeMethod(method);
+  return `Simplify<RouteTypeMap["${normalizedPath}"]["${normalizedMethod}"]["${typePart}"]>`;
+}
