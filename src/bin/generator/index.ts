@@ -36,6 +36,8 @@ export interface GeneratorOptions {
   useTypesV2?: boolean;
   withSchemas?: boolean;
   format?: boolean;
+  /** When true, generated method types include optional `headers` for per-request overrides. Default false. */
+  allowRequestSpecificHeaders?: boolean;
 }
 
 /**
@@ -49,6 +51,8 @@ export async function generateClient(options: GeneratorOptions): Promise<void> {
   const SEPARATE_TYPES = options.separateTypes || false;
   const USE_TYPES_V2 = options.useTypesV2 || false;
   const WITH_SCHEMAS = options.withSchemas || false;
+  const ALLOW_REQUEST_SPECIFIC_HEADERS =
+    options.allowRequestSpecificHeaders === true;
 
   // Validate: useTypesV2 requires separateTypes
   if (USE_TYPES_V2 && !SEPARATE_TYPES) {
@@ -239,6 +243,7 @@ export type RouteType<
     SEPARATE_TYPES,
     USE_TYPES_V2,
     log,
+    ALLOW_REQUEST_SPECIFIC_HEADERS,
   );
   if (interfaceSig) {
     apiInterface += '  ' + interfaceSig.split('; ').join(';\n  ') + ';\n';

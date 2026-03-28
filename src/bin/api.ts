@@ -43,6 +43,10 @@ program
     '--with-schemas',
     'Emit runtime Zod schemas and getSchema(path, method, part) (requires --use-types-v2)',
   )
+  .option(
+    '--allow-request-specific-headers',
+    'Include optional headers in generated method types for per-request header overrides',
+  )
   .action(async (options) => {
     await generateClient(options);
   });

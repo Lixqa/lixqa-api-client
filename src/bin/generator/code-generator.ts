@@ -86,6 +86,7 @@ export function generateMethodSignature(
   separateTypes = false,
   useTypesV2 = false,
   log: Logger | null = null,
+  allowRequestSpecificHeaders = false,
 ): string {
   const methodSchema = (route.schema?.[method] || {}) as
     | MethodSchema
@@ -103,8 +104,12 @@ export function generateMethodSignature(
           ? zodDefToTypeScript(methodSchema.response, false, log)
           : 'any';
 
-  if (!hasBody && !hasQuery && !hasFiles)
-    return `(options?: { headers?: Record<string, string> }) => Promise<${responseType}>`;
+  if (!hasBody && !hasQuery && !hasFiles) {
+    if (allowRequestSpecificHeaders) {
+      return `(options?: { headers?: Record<string, string> }) => Promise<${responseType}>`;
+    }
+    return `() => Promise<${responseType}>`;
+  }
 
   const parts: string[] = [];
   let hasRequiredOptions = false;
@@ -148,7 +153,9 @@ export function generateMethodSignature(
     }
   }
 
-  parts.push('headers?: Record<string, string>');
+  if (allowRequestSpecificHeaders) {
+    parts.push('headers?: Record<string, string>');
+  }
 
   const optionsRequired = hasRequiredOptions ? '' : '?';
   return `(options${optionsRequired}: { ${parts.join('; ')} }) => Promise<${responseType}>`;
@@ -239,6 +246,7 @@ export function generateInterfaceFromTree(
   separateTypes = false,
   useTypesV2 = false,
   log: Logger | null = null,
+  allowRequestSpecificHeaders = false,
 ): string {
   const signatures: string[] = [];
 
@@ -252,6 +260,7 @@ export function generateInterfaceFromTree(
       separateTypes,
       useTypesV2,
       log,
+      allowRequestSpecificHeaders,
     );
     signatures.push(`${methodLower}: ${signature}`);
   });
@@ -265,6 +274,7 @@ export function generateInterfaceFromTree(
       separateTypes,
       useTypesV2,
       log,
+      allowRequestSpecificHeaders,
     );
     if (childSigs) {
       signatures.push(`'${name}': { ${childSigs} }`);
@@ -281,6 +291,7 @@ export function generateInterfaceFromTree(
       separateTypes,
       useTypesV2,
       log,
+      allowRequestSpecificHeaders,
     );
     if (childSigs) {
       signatures.push(`$: (${paramName}: string | number) => { ${childSigs} }`);
