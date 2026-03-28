@@ -10,6 +10,7 @@ export type {
   ProxyRequest,
   ProxyResponse,
   ProxyFn,
+  RequestCallOptions,
 } from './lib/base-client.js';
 export { RequestError, ValidationError } from './lib/errors.js';
 export type {

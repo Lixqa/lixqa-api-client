@@ -104,7 +104,7 @@ export function generateMethodSignature(
           : 'any';
 
   if (!hasBody && !hasQuery && !hasFiles)
-    return `() => Promise<${responseType}>`;
+    return `(options?: { headers?: Record<string, string> }) => Promise<${responseType}>`;
 
   const parts: string[] = [];
   let hasRequiredOptions = false;
@@ -147,6 +147,8 @@ export function generateMethodSignature(
       if (fileInfo?.required) hasRequiredOptions = true;
     }
   }
+
+  parts.push('headers?: Record<string, string>');
 
   const optionsRequired = hasRequiredOptions ? '' : '?';
   return `(options${optionsRequired}: { ${parts.join('; ')} }) => Promise<${responseType}>`;

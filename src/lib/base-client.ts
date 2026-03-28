@@ -27,6 +27,15 @@ export interface ClientOptions {
   proxyFn?: ProxyFn;
 }
 
+/** Per-request options passed to generated `.get()`, `.post()`, etc. */
+export interface RequestCallOptions {
+  body?: any;
+  query?: any;
+  files?: any;
+  /** Merged on top of client-level headers; per-request values win. */
+  headers?: Record<string, string>;
+}
+
 // Helper function to sleep/wait
 const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,7 +91,7 @@ export const createRequest = (options: ClientOptions = {}) => {
   return async <T = any>(
     path: string,
     method: string,
-    requestOptions: { body?: any; query?: any; files?: any } = {},
+    requestOptions: RequestCallOptions = {},
   ): Promise<T> => {
     // Parse base URL to preserve its path component
     const baseUrlObj = new URL(baseUrl);
@@ -108,11 +117,16 @@ export const createRequest = (options: ClientOptions = {}) => {
         if (value !== undefined) url.searchParams.append(key, String(value));
       });
 
+    const requestHeaders = (): Record<string, string> => ({
+      ...defaultHeaders,
+      ...requestOptions.headers,
+    });
+
     // Helper function to make a single request attempt
     const makeRequest = async (): Promise<Response> => {
       const fetchOptions: RequestInit = {
         method,
-        headers: { ...defaultHeaders },
+        headers: requestHeaders(),
       };
 
       let requestBody: string | FormData | undefined;
@@ -164,7 +178,7 @@ export const createRequest = (options: ClientOptions = {}) => {
           body: requestOptions.files
             ? requestBody // FormData for file uploads
             : requestOptions.body, // Raw object for JSON requests
-          headers: { ...defaultHeaders },
+          headers: requestHeaders(),
         };
 
         const proxyResult = await proxyFn(proxyRequest);
